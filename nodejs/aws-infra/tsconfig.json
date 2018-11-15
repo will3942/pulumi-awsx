@@ -19,6 +19,7 @@
         "aws.ts",
         "cluster.ts",
         "network.ts",
+        "network2.ts",
         "utils.ts",
     ]
 }

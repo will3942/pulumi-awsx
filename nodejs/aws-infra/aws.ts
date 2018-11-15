@@ -17,12 +17,18 @@
 import * as aws from "@pulumi/aws";
 
 // Copmute the availability zones only once, and store the resulting promise.
-let azs: Promise<aws.GetAvailabilityZonesResult> | undefined;
+let azs: Promise<string[]> | undefined;
 
 // Export as a function instead of a variable so clients can pass one AZ as a promise to a resource.
-export async function getAwsAz(index: number) {
+export async function getAvailabilityZone(index: number) {
+    const array = await getAvailabilityZones();
+    return array[index];
+}
+
+export function getAvailabilityZones(): Promise<string[]> {
     if (!azs) {
-        azs = aws.getAvailabilityZones();
+        azs = aws.getAvailabilityZones().then(r => r.names.sort());
     }
-    return (await azs).names[index];
+
+    return azs;
 }
