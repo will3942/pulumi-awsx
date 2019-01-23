@@ -176,8 +176,15 @@ class AssetImage extends Image {
         // the TaskDefinition get's replaced IFF the built image changes.
 
         const uniqueImageName = docker.buildAndPushImage(
-                imageName, pathOrBuild, repositoryUrl, logResource,
-                () => getDockerRegistryFromRegistryId(registryId));
+            imageName, pathOrBuild, repositoryUrl, logResource,
+            async () => {
+                const imageRegistry = await getDockerImageRegistryFromRegistryId(registryId);
+                return {
+                    registry: imageRegistry.server,
+                    username: imageRegistry.username,
+                    password: imageRegistry.password,
+                }
+            });
 
         uniqueImageName.apply(d =>
             pulumi.log.debug(`    build complete: ${imageName} (${d})`, logResource));
@@ -186,17 +193,17 @@ class AssetImage extends Image {
     }
 }
 
-export function getDockerRegistry(registryId: pulumi.Input<string>): pulumi.Output<docker.Registry>;
-export function getDockerRegistry(repository: aws.ecr.Repository): pulumi.Output<docker.Registry>;
-export function getDockerRegistry(repositoryOrRegistryId: aws.ecr.Repository | pulumi.Input<string>): pulumi.Output<docker.Registry> {
+export function getDockerImageRegistry(registryId: pulumi.Input<string>): pulumi.Output<docker.ImageRegistry>;
+export function getDockerImageRegistry(repository: aws.ecr.Repository): pulumi.Output<docker.ImageRegistry>;
+export function getDockerImageRegistry(repositoryOrRegistryId: aws.ecr.Repository | pulumi.Input<string>): pulumi.Output<docker.ImageRegistry> {
     const registryId = pulumi.Resource.isInstance(repositoryOrRegistryId)
         ? repositoryOrRegistryId.registryId
         : pulumi.output(repositoryOrRegistryId);
 
-    return registryId.apply(getDockerRegistryFromRegistryId);
+    return registryId.apply(getDockerImageRegistryFromRegistryId);
 }
 
-async function getDockerRegistryFromRegistryId(registryId: string): Promise<docker.Registry> {
+async function getDockerImageRegistryFromRegistryId(registryId: string) {
     // Construct Docker registry auth data by getting the short-lived authorizationToken from ECR, and
     // extracting the username/password pair after base64-decoding the token.
     //
@@ -213,7 +220,7 @@ async function getDockerRegistryFromRegistryId(registryId: string): Promise<dock
     }
 
     return {
-        registry: credentials.proxyEndpoint,
+        server: credentials.proxyEndpoint,
         username: username,
         password: password,
     };
