@@ -176,26 +176,8 @@ class AssetImage extends Image {
         // the TaskDefinition get's replaced IFF the built image changes.
 
         const uniqueImageName = docker.buildAndPushImage(
-                imageName, pathOrBuild, repositoryUrl, logResource, async () => {
-            // Construct Docker registry auth data by getting the short-lived authorizationToken from ECR, and
-            // extracting the username/password pair after base64-decoding the token.
-            //
-            // See: http://docs.aws.amazon.com/cli/latest/reference/ecr/get-authorization-token.html
-            if (!registryId) {
-                throw new Error("Expected registry ID to be defined during push");
-            }
-            const credentials = await aws.ecr.getCredentials({ registryId: registryId });
-            const decodedCredentials = Buffer.from(credentials.authorizationToken, "base64").toString();
-            const [username, password] = decodedCredentials.split(":");
-            if (!password || !username) {
-                throw new Error("Invalid credentials");
-            }
-            return {
-                registry: credentials.proxyEndpoint,
-                username: username,
-                password: password,
-            };
-        });
+                imageName, pathOrBuild, repositoryUrl, logResource,
+                () => getDockerRegistryFromRegistryId(registryId));
 
         uniqueImageName.apply(d =>
             pulumi.log.debug(`    build complete: ${imageName} (${d})`, logResource));
@@ -204,3 +186,35 @@ class AssetImage extends Image {
     }
 }
 
+export function getDockerRegistry(registryId: pulumi.Input<string>): pulumi.Output<docker.Registry>;
+export function getDockerRegistry(repository: aws.ecr.Repository): pulumi.Output<docker.Registry>;
+export function getDockerRegistry(repositoryOrRegistryId: aws.ecr.Repository | pulumi.Input<string>): pulumi.Output<docker.Registry> {
+    const registryId = pulumi.Resource.isInstance(repositoryOrRegistryId)
+        ? repositoryOrRegistryId.registryId
+        : pulumi.output(repositoryOrRegistryId);
+
+    return registryId.apply(getDockerRegistryFromRegistryId);
+}
+
+async function getDockerRegistryFromRegistryId(registryId: string): Promise<docker.Registry> {
+    // Construct Docker registry auth data by getting the short-lived authorizationToken from ECR, and
+    // extracting the username/password pair after base64-decoding the token.
+    //
+    // See: http://docs.aws.amazon.com/cli/latest/reference/ecr/get-authorization-token.html
+    if (!registryId) {
+        throw new Error("No registry id provided.");
+    }
+
+    const credentials = await aws.ecr.getCredentials({ registryId });
+    const decodedCredentials = Buffer.from(credentials.authorizationToken, "base64").toString();
+    const [username, password] = decodedCredentials.split(":");
+    if (!password || !username) {
+        throw new Error("Invalid credentials");
+    }
+
+    return {
+        registry: credentials.proxyEndpoint,
+        username: username,
+        password: password,
+    };
+}
