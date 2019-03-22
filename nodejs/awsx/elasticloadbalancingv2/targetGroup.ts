@@ -46,7 +46,9 @@ export abstract class TargetGroup
             protocol: utils.ifUndefined(args.protocol, "HTTP"),
             deregistrationDelay: utils.ifUndefined(args.deregistrationDelay, 300),
             targetType: utils.ifUndefined(args.targetType, "ip"),
-            tags: utils.mergeTags(args.tags, { Name: longName }),
+            // merge some good default tags, with whatever the user wants.  Their choices should
+            // always win out over any defaults we pick.
+            tags: utils.mergeTags({ Name: longName }, args.tags),
         }, parentOpts);
     }
 

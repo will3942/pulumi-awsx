@@ -40,7 +40,9 @@ export abstract class LoadBalancer extends pulumi.ComponentResource {
             subnets: getSubnets(args, this.vpc, external),
             internal: external.apply(ex => !ex),
             securityGroups: this.securityGroups.map(g => g.id),
-            tags: utils.mergeTags(args.tags, { Name: longName }),
+            // merge some good default tags, with whatever the user wants.  Their choices should
+            // always win out over any defaults we pick.
+            tags: utils.mergeTags({ Name: longName }, args.tags),
         }, parentOpts);
    }
 }
