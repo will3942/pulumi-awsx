@@ -18,11 +18,9 @@ const autoScalingGroup = cluster.createAutoScalingGroup("testing", {
 This will create an ASG that use the private subnets of the VPC, attempting to keep around at least 10 instances running with the specified size.  If you want instances to be allowed access to the internet, this can be done by specifying:
 
 ```ts
-const cluster = new awsx.ecs.Cluster("testing", { vpc });
-
 const autoScalingGroup = cluster.createAutoScalingGroup("testing", {
+    // ... other parameters
     subnetIds: vpc.publicSubnetIds,
-    templateParameters: { minSize: 10 },
     launchConfigurationArgs: { instanceType: "t2.medium", associatePublicIpAddress: true },
 });
 ```
