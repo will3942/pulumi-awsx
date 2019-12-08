@@ -21,24 +21,7 @@ import * as utils from "./../utils";
 
 export class EC2TaskDefinition extends ecs.TaskDefinition {
     /** @internal */
-    constructor(version: number, name: string, opts: pulumi.ComponentResourceOptions) {
-        super(version, "awsx:x:ecs:EC2TaskDefinition", name, opts);
-
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not call [new EC2TaskDefinition] directly. Use [EC2TaskDefinition.create] instead.", this);
-        }
-    }
-
-    public static async create(name: string,
-                               args: EC2TaskDefinitionArgs,
-                               opts: pulumi.ComponentResourceOptions = {}) {
-
-        const result = new EC2TaskDefinition(1, name, opts);
-        await result.initializeTaskDefinition(name, args);
-        return result;
-    }
-
-    private async initializeTaskDefinition(name: string, args: EC2TaskDefinitionArgs): Promise<void> {
+    constructor(name: string, args: EC2TaskDefinitionArgs, opts: pulumi.ComponentResourceOptions = {}) {
         if (!args.container && !args.containers) {
             throw new Error("Either [container] or [containers] must be provided");
         }
@@ -54,7 +37,7 @@ export class EC2TaskDefinition extends ecs.TaskDefinition {
 
         delete (<any>argsCopy).container;
 
-        await this.initialize(name, /*isFargate:*/ false, argsCopy);
+        super("awsx:x:ecs:EC2TaskDefinition", name, /*isFargate:*/ false, argsCopy, opts);
 
         this.registerOutputs();
     }
@@ -109,17 +92,18 @@ export class EC2Service extends ecs.Service {
             throw new Error("Either [taskDefinition] or [taskDefinitionArgs] must be provided");
         }
 
-        const cluster = args.cluster || await x.ecs.Cluster.getDefault();
+        const cluster = args.cluster || x.ecs.Cluster.getDefault();
+        const clusterVpc = await cluster.vpc;
 
         const taskDefinition = args.taskDefinition ||
-            await ecs.EC2TaskDefinition.create(name, {
+            new ecs.EC2TaskDefinition(name, {
                 ...args.taskDefinitionArgs,
-                vpc: cluster.vpc,
+                vpc: clusterVpc,
             }, opts);
 
-        const securityGroups = (await x.ec2.getSecurityGroups(
-            cluster.vpc, name, args.securityGroups || cluster.securityGroups, opts)) || [];
-        const subnets = args.subnets || cluster.vpc.publicSubnetIds;
+        const securityGroups = x.ec2.getSecurityGroups(
+            clusterVpc, name, args.securityGroups || await cluster.securityGroups, opts) || [];
+        const subnets = args.subnets || clusterVpc.publicSubnetIds;
 
         await this.initialize(name, {
             ...args,

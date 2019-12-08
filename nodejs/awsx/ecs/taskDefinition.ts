@@ -23,20 +23,20 @@ import * as role from "../role";
 import * as utils from "../utils";
 
 export abstract class TaskDefinition extends pulumi.ComponentResource {
-    public readonly taskDefinition!: aws.ecs.TaskDefinition;
-    public readonly logGroup?: aws.cloudwatch.LogGroup;
-    public readonly containers!: Record<string, ecs.Container>;
-    public readonly taskRole?: aws.iam.Role;
-    public readonly executionRole?: aws.iam.Role;
+    public readonly taskDefinition: Promise<aws.ecs.TaskDefinition>;
+    public readonly logGroup: Promise<aws.cloudwatch.LogGroup | undefined>;
+    public readonly containers: Promise<Record<string, ecs.Container>>;
+    public readonly taskRole: Promise<aws.iam.Role | undefined>;
+    public readonly executionRole: Promise<aws.iam.Role | undefined>;
 
     /**
      * Mapping from container in this task to the ELB listener exposing it through a load balancer.
      * Only present if a listener was provided in [Container.portMappings] or in
      * [Container.applicationListener] or [Container.networkListener].
      */
-    public readonly listeners: Record<string, x.lb.Listener> = {};
-    public readonly applicationListeners: Record<string, x.lb.ApplicationListener> = {};
-    public readonly networkListeners: Record<string, x.lb.NetworkListener> = {};
+    public readonly listeners: Promise<Record<string, x.lb.Listener>>;
+    public readonly applicationListeners: Promise<Record<string, x.lb.ApplicationListener>>;
+    public readonly networkListeners: Promise<Record<string, x.lb.NetworkListener>>;
 
     /**
      * Run one or more instances of this TaskDefinition using the ECS `runTask` API, returning the Task instances.
@@ -45,55 +45,73 @@ export abstract class TaskDefinition extends pulumi.ComponentResource {
      *
      * This API is designed for use at runtime.
      */
-    public readonly run!: (
+    public readonly run: (
         params: RunTaskRequest,
     ) => Promise<awssdk.ECS.Types.RunTaskResponse>;
 
     /** @internal */
-    constructor(version: number, type: string, name: string, opts: pulumi.ComponentResourceOptions) {
+    constructor(type: string, name: string, isFargate: boolean, args: TaskDefinitionArgs, opts: pulumi.ComponentResourceOptions = {}) {
         super(type, name, {}, opts);
 
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not construct a TaskDefinition directly. Use [EC2TaskDefinition.create] or [FargateTaskDefinition.create] instead.", this);
-        }
+        const data = TaskDefinition.initialize(this, name, isFargate, args);
+        this.taskDefinition = data.then(d => d.taskDefinition);
+        this.logGroup = data.then(d => d.logGroup);
+        this.containers = data.then(d => d.containers);
+        this.taskRole = data.then(d => d.taskRole);
+        this.executionRole = data.then(d => d.executionRole);
+        this.listeners = data.then(d => d.listeners);
+        this.applicationListeners = data.then(d => d.applicationListeners);
+        this.networkListeners = data.then(d => d.networkListeners);
+
+        this.run = createRunFunction(isFargate, pulumi.output(this.taskDefinition).apply(td => td.arn));
     }
 
     /** @internal */
-    public async initialize(name: string, isFargate: boolean, args: TaskDefinitionArgs) {
-        const _this = utils.Mutable(this);
-
-        _this.logGroup = args.logGroup === null ? undefined :
+    public static async initialize(_this: TaskDefinition, name: string, isFargate: boolean, args: TaskDefinitionArgs) {
+        const logGroup = args.logGroup === null ? undefined :
                          args.logGroup ? args.logGroup : new aws.cloudwatch.LogGroup(name, {
             retentionInDays: 1,
-        }, { parent: this });
+        }, { parent: _this });
 
-        _this.taskRole = args.taskRole === null ? undefined :
+        const taskRole = args.taskRole === null ? undefined :
                          args.taskRole ? args.taskRole : TaskDefinition.createTaskRole(
-            `${name}-task`, /*assumeRolePolicy*/ undefined, /*policyArns*/ undefined, { parent: this });
+            `${name}-task`, /*assumeRolePolicy*/ undefined, /*policyArns*/ undefined, { parent: _this });
 
-        _this.executionRole = args.taskRole === null ? undefined :
+        const executionRole = args.taskRole === null ? undefined :
                               args.executionRole ? args.executionRole : TaskDefinition.createExecutionRole(
-            `${name}-execution`, /*assumeRolePolicy*/ undefined, /*policyArns*/ undefined, { parent: this });
+            `${name}-execution`, /*assumeRolePolicy*/ undefined, /*policyArns*/ undefined, { parent: _this });
 
-        _this.containers = args.containers;
+        const containers = args.containers;
+
+        const applicationListeners: Record<string, x.lb.ApplicationListener> = {};
+        const networkListeners: Record<string, x.lb.NetworkListener> = {};
 
         const containerDefinitions = await computeContainerDefinitions(
-            this, name, args.vpc, this.containers, this.applicationListeners, this.networkListeners, this.logGroup);
-        _this.listeners = {...this.applicationListeners, ...this.networkListeners };
+            _this, name, args.vpc, containers, applicationListeners, networkListeners, logGroup);
+        const listeners = {...applicationListeners, ...networkListeners };
 
         const containerString = containerDefinitions.apply(d => JSON.stringify(d));
         const defaultFamily = containerString.apply(s => name + "-" + utils.sha1hash(pulumi.getStack() + containerString));
         const family = utils.ifUndefined(args.family, defaultFamily);
 
-        _this.taskDefinition = new aws.ecs.TaskDefinition(name, {
+        const taskDefinition = new aws.ecs.TaskDefinition(name, {
             ...args,
             family: family,
-            taskRoleArn: this.taskRole ? this.taskRole.arn : undefined,
-            executionRoleArn: this.executionRole ? this.executionRole.arn : undefined,
+            taskRoleArn: taskRole ? taskRole.arn : undefined,
+            executionRoleArn: executionRole ? executionRole.arn : undefined,
             containerDefinitions: containerString,
-        }, { parent: this });
+        }, { parent: _this });
 
-        _this.run = createRunFunction(isFargate, this.taskDefinition.arn);
+        return {
+            taskDefinition,
+            logGroup,
+            containers,
+            taskRole,
+            executionRole,
+            listeners,
+            applicationListeners,
+            networkListeners,
+        };
     }
 
     /**
@@ -167,7 +185,7 @@ export abstract class TaskDefinition extends pulumi.ComponentResource {
     }
 }
 
-utils.Capture(TaskDefinition.prototype).initialize.doNotCapture = true;
+utils.Capture(TaskDefinition).initialize.doNotCapture = true;
 
 export interface RunTaskRequest {
     /**
@@ -228,14 +246,17 @@ type RunTaskRequestOverrideShape = utils.Overwrite<awssdk.ECS.RunTaskRequest, {
 const _: string = utils.checkCompat<RunTaskRequestOverrideShape, RunTaskRequest>();
 
 function createRunFunction(isFargate: boolean, taskDefArn: pulumi.Output<string>) {
-    return function run(params: RunTaskRequest) {
+    return async function run(params: RunTaskRequest) {
 
         const ecs = new aws.sdk.ECS();
 
         const cluster = params.cluster;
+        const vpc = await cluster.vpc;
+        const securityGroups = await cluster.securityGroups;
+
         const clusterArn = cluster.id.get();
-        const securityGroupIds = cluster.securityGroups.map(g => g.id.get());
-        const subnetIds = cluster.vpc.publicSubnetIds.map(i => i.get());
+        const securityGroupIds = securityGroups.map(g => g.id.get());
+        const subnetIds = vpc.publicSubnetIds.map(i => i.get());
         const assignPublicIp = isFargate; // && !usePrivateSubnets;
 
         // Run the task
