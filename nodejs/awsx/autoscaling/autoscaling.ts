@@ -51,7 +51,7 @@ export class AutoScalingGroup extends pulumi.ComponentResource {
     public readonly targetGroups: Promise<x.lb.TargetGroup[]>;
 
     /** @internal */
-    constructor(version: number, name: string, args: AutoScalingGroupArgs, opts: pulumi.ComponentResourceOptions = {}) {
+    constructor(name: string, args: AutoScalingGroupArgs, opts: pulumi.ComponentResourceOptions = {}) {
         super("awsx:x:autoscaling:AutoScalingGroup", name, {}, opts);
 
         const data = AutoScalingGroup.initialize(this, name, args);

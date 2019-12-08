@@ -66,7 +66,7 @@ export class AutoScalingLaunchConfiguration extends pulumi.ComponentResource {
             AutoScalingLaunchConfiguration.createInstanceProfile(
                 name, /*assumeRolePolicy:*/ undefined, /*policyArns:*/ undefined, { parent: _this });
 
-        const securityGroups = await x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent: _this }) || [];
+        const securityGroups = x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent: _this }) || [];
 
         const launchConfiguration = new aws.ec2.LaunchConfiguration(name, {
             ...args,
