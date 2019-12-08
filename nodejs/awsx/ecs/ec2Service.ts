@@ -54,7 +54,7 @@ export class EC2TaskDefinition extends ecs.TaskDefinition {
             throw new Error("[args.taskDefinitionArgs] should not be provided.");
         }
 
-        return ecs.EC2Service.create(name, {
+        return new ecs.EC2Service(name, {
             ...args,
             taskDefinition: this,
         }, { parent: this, ...opts });
@@ -64,29 +64,31 @@ export class EC2TaskDefinition extends ecs.TaskDefinition {
 (<any>EC2TaskDefinition.prototype).initializeTaskDefinition.doNotCapture = true;
 
 export class EC2Service extends ecs.Service {
-    public readonly taskDefinition!: EC2TaskDefinition;
+    public readonly taskDefinition: Promise<EC2TaskDefinition>;
 
     /** @internal */
-    constructor(version: number, name: string, opts: pulumi.ComponentResourceOptions) {
-        super(version, "awsx:x:ecs:EC2Service", name, opts);
+    constructor(name: string, args: EC2ServiceArgs, opts: pulumi.ComponentResourceOptions) {
+        super("awsx:x:ecs:EC2Service", name, opts);
 
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not call [new EC2Service] directly. Use [EC2Service.create] instead.", this);
-        }
+        const data = EC2Service.initializeService(this, name, args, opts);
+        // @ts-ignore
+        this.service = data.then(d => d.service);
+        // @ts-ignore
+        this.cluster = data.then(d => d.cluster);
+        // @ts-ignore
+        this.listeners = data.then(d => d.listeners);
+        // @ts-ignore
+        this.applicationListeners = data.then(d => d.applicationListeners);
+        // @ts-ignore
+        this.networkListeners = data.then(d => d.networkListeners);
+
+        this.taskDefinition = data.then(d => d.taskDefinition);
+
+        this.registerOutputs();
     }
 
-    public static async create(name: string,
-                               args: EC2ServiceArgs,
-                               opts: pulumi.ComponentResourceOptions = {}) {
-        const result = new EC2Service(1, name, opts);
-        await result.initializeService(name, args, opts);
-        return result;
-    }
-
-    private async initializeService(name: string,
-                                    args: EC2ServiceArgs,
-                                    opts: pulumi.ComponentResourceOptions) {
-        const _this = utils.Mutable(this);
+    private static async initializeService(
+            _this: EC2Service, name: string, args: EC2ServiceArgs, opts: pulumi.ComponentResourceOptions) {
 
         if (!args.taskDefinition && !args.taskDefinitionArgs) {
             throw new Error("Either [taskDefinition] or [taskDefinitionArgs] must be provided");
@@ -105,12 +107,13 @@ export class EC2Service extends ecs.Service {
             clusterVpc, name, args.securityGroups || await cluster.securityGroups, opts) || [];
         const subnets = args.subnets || clusterVpc.publicSubnetIds;
 
-        await this.initialize(name, {
+        const rawTaskDefinition = await taskDefinition.taskDefinition;
+        const baseResult = await ecs.Service.initialize(_this, name, {
             ...args,
             taskDefinition,
             securityGroups,
             launchType: "EC2",
-            networkConfiguration: taskDefinition.taskDefinition.networkMode.apply(n => {
+            networkConfiguration: rawTaskDefinition.networkMode.apply(n => {
                 // The network configuration for the service. This parameter is required for task
                 // definitions that use the `awsvpc` network mode to receive their own Elastic
                 // Network Interface, and it is not supported for other network modes.
@@ -124,11 +127,12 @@ export class EC2Service extends ecs.Service {
                     securityGroups: securityGroups.map(g => g.id),
                 };
             }),
-        }, /*isFargate:*/ false);
+        });
 
-        _this.taskDefinition = taskDefinition;
-
-        this.registerOutputs();
+        return {
+            ...baseResult,
+            taskDefinition,
+        };
     }
 }
 

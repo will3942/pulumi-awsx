@@ -20,63 +20,69 @@ import * as x from "..";
 import * as utils from "./../utils";
 
 export abstract class Service extends pulumi.ComponentResource {
-    public readonly service!: aws.ecs.Service;
-    public readonly cluster!: ecs.Cluster;
-    public readonly taskDefinition!: ecs.TaskDefinition;
+    public readonly service!: Promise<aws.ecs.Service>;
+    public readonly cluster!: Promise<ecs.Cluster>;
+    public readonly taskDefinition!: Promise<ecs.TaskDefinition>;
 
     /**
      * Mapping from container in this service to the ELB listener exposing it through a load
      * balancer. Only present if a listener was provided in [Container.portMappings] or in
      * [Container.applicationListener] or [Container.networkListener].
      */
-    public readonly listeners: Record<string, x.lb.Listener> = {};
-    public readonly applicationListeners: Record<string, x.lb.ApplicationListener> = {};
-    public readonly networkListeners: Record<string, x.lb.NetworkListener> = {};
+    public readonly listeners!: Promise<Record<string, x.lb.Listener>>;
+    public readonly applicationListeners!: Promise<Record<string, x.lb.ApplicationListener>>;
+    public readonly networkListeners!: Promise<Record<string, x.lb.NetworkListener>>;
 
     /** @internal */
-    constructor(version: number, type: string, name: string, opts: pulumi.ComponentResourceOptions) {
+    constructor(type: string, name: string, opts: pulumi.ComponentResourceOptions = {}) {
         super(type, name, {}, opts);
-
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not construct a Service directly. Use [EC2Service.create] or [FargateService.create] instead.", this);
-        }
     }
 
     /** @internal */
-    public async initialize(name: string, args: ServiceArgs, isFargate: boolean) {
-        const _this = utils.Mutable(this);
+    public static async initialize(_this: Service, name: string, args: ServiceArgs) {
+        const cluster = args.cluster || x.ecs.Cluster.getDefault();
+        const rawCluster = await cluster.cluster;
 
-        _this.cluster = args.cluster || await x.ecs.Cluster.getDefault();
-
-        _this.listeners = args.taskDefinition.listeners;
-        _this.applicationListeners = args.taskDefinition.applicationListeners;
-        _this.networkListeners = args.taskDefinition.networkListeners;
+        const listeners = await args.taskDefinition.listeners;
+        const applicationListeners = args.taskDefinition.applicationListeners;
+        const networkListeners = args.taskDefinition.networkListeners;
 
         // Determine which load balancers we're attached to based on the information supplied to the
         // containers for this service.
-        const loadBalancers = getLoadBalancers(this, name, args);
+        const loadBalancers = await getLoadBalancers(_this, listeners, name, args);
 
-        _this.service = new aws.ecs.Service(name, {
+        const rawTaskDefinition = await args.taskDefinition.taskDefinition;
+
+        const service = new aws.ecs.Service(name, {
             ...args,
             loadBalancers,
-            cluster: this.cluster.cluster.arn,
-            taskDefinition: args.taskDefinition.taskDefinition.arn,
+            cluster: rawCluster.arn,
+            taskDefinition: rawTaskDefinition.arn,
             desiredCount: utils.ifUndefined(args.desiredCount, 1),
             launchType: utils.ifUndefined(args.launchType, "EC2"),
             waitForSteadyState: utils.ifUndefined(args.waitForSteadyState, true),
         }, {
-            parent: this,
+            parent: _this,
             // If the cluster has any autoscaling groups, ensure the service depends on it being created.
-            dependsOn: this.cluster.autoScalingGroups.map(g => g.stack),
+            dependsOn: cluster.autoScalingGroups.map(g => g.stack),
         });
 
-        _this.taskDefinition = args.taskDefinition;
+        const taskDefinition = args.taskDefinition;
+
+        return {
+            service,
+            cluster,
+            taskDefinition,
+            listeners,
+            applicationListeners,
+            networkListeners,
+        };
     }
 }
 
-utils.Capture(Service.prototype).initialize.doNotCapture = true;
+utils.Capture(Service).initialize.doNotCapture = true;
 
-function getLoadBalancers(service: ecs.Service, name: string, args: ServiceArgs) {
+async function getLoadBalancers(service: ecs.Service, listeners: Record<string, x.lb.Listener>, name: string, args: ServiceArgs) {
     const result: pulumi.Output<ServiceLoadBalancer>[] = [];
 
     // Get the initial set of load balancers if specified directly in our args.
@@ -91,9 +97,11 @@ function getLoadBalancers(service: ecs.Service, name: string, args: ServiceArgs)
 
     const containerLoadBalancerProviders = new Map<string, ecs.ContainerLoadBalancerProvider>();
 
+    const containers = await args.taskDefinition.containers;
+
     // Now walk each container and see if it wants to add load balancer information as well.
-    for (const containerName of Object.keys(args.taskDefinition.containers)) {
-        const container = args.taskDefinition.containers[containerName];
+    for (const containerName of Object.keys(containers)) {
+        const container = containers[containerName];
         if (!container.portMappings) {
             continue;
         }
@@ -107,9 +115,9 @@ function getLoadBalancers(service: ecs.Service, name: string, args: ServiceArgs)
 
     // Finally see if we were directly given load balancing listeners to associate our containers
     // with. If so, use their information to populate our LB information.
-    for (const containerName of Object.keys(service.listeners)) {
+    for (const containerName of Object.keys(listeners)) {
         if (!containerLoadBalancerProviders.has(containerName)) {
-            containerLoadBalancerProviders.set(containerName, service.listeners[containerName]);
+            containerLoadBalancerProviders.set(containerName, listeners[containerName]);
         }
     }
 
