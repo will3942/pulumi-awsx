@@ -24,84 +24,87 @@ import * as stepScaling from "./stepScaling";
 import * as targetTracking from "./targetTracking";
 
 export class AutoScalingGroup extends pulumi.ComponentResource {
-    public readonly vpc!: x.ec2.Vpc;
+    public readonly vpc: Promise<x.ec2.Vpc>;
 
     /**
      * The [cloudformation.Stack] that was used to create this [AutoScalingGroup].  [CloudFormation]
      * is used here as the existing AWS apis for creating [AutoScalingGroup]s are not rich enough to
      * express everything that can be configured through [CloudFormation] itself.
      */
-    public readonly stack!: aws.cloudformation.Stack;
+    public readonly stack: Promise<aws.cloudformation.Stack>;
 
     /**
      * The launch configuration for this auto scaling group.
      */
-    public readonly launchConfiguration!: AutoScalingLaunchConfiguration;
+    public readonly launchConfiguration: Promise<AutoScalingLaunchConfiguration>;
 
     /**
      * Underlying [autoscaling.Group] that is created by cloudformation.
      */
-    public readonly group!: aws.autoscaling.Group;
+    public readonly group: Promise<aws.autoscaling.Group>;
 
     /**
      * Target groups this [AutoScalingGroup] is attached to.  See
      * https://docs.aws.amazon.com/autoscaling/ec2/userguide/attach-load-balancer-asg.html
      * for more details.
      */
-    public readonly targetGroups!: x.lb.TargetGroup[];
+    public readonly targetGroups: Promise<x.lb.TargetGroup[]>;
 
     /** @internal */
-    constructor(version: number, name: string, opts: pulumi.ComponentResourceOptions) {
+    constructor(version: number, name: string, args: AutoScalingGroupArgs, opts: pulumi.ComponentResourceOptions = {}) {
         super("awsx:x:autoscaling:AutoScalingGroup", name, {}, opts);
 
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not call [new AutoScalingGroup] directly. Use [AutoScalingGroup.create] instead.", this);
-        }
-    }
+        const data = AutoScalingGroup.initialize(this, name, args);
+        this.vpc = data.then(d => d.vpc);
+        this.stack = data.then(d => d.stack);
+        this.launchConfiguration = data.then(d => d.launchConfiguration);
+        this.group = data.then(d => d.group);
+        this.targetGroups = data.then(d => d.targetGroups);
 
-    public static async create(name: string,
-                               args: AutoScalingGroupArgs,
-                               opts: pulumi.ComponentResourceOptions = {}): Promise<AutoScalingGroup> {
-        const result = new AutoScalingGroup(1, name, opts);
-        await result.initialize(name, args);
-        return result;
+        this.registerOutputs();
     }
 
     /** @internal */
-    public async initialize(name: string, args: AutoScalingGroupArgs) {
-        const _this = utils.Mutable(this);
-
-        _this.vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent: this });
-        const subnetIds = args.subnetIds || this.vpc.privateSubnetIds;
-        _this.targetGroups = args.targetGroups || [];
-        const targetGroupArns = this.targetGroups.map(g => g.targetGroup.arn);
+    public static async initialize(_this: AutoScalingGroup, name: string, args: AutoScalingGroupArgs) {
+        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent: _this });
+        const subnetIds = args.subnetIds || vpc.privateSubnetIds;
+        const targetGroups = args.targetGroups || [];
+        const targetGroupArns = targetGroups.map(g => g.targetGroup.arn);
 
         // Use the autoscaling config provided, otherwise just create a default one for this cluster.
+        let launchConfiguration: AutoScalingLaunchConfiguration;
         if (args.launchConfiguration) {
-            _this.launchConfiguration = args.launchConfiguration;
+            launchConfiguration = args.launchConfiguration;
         }
         else {
-            _this.launchConfiguration = await AutoScalingLaunchConfiguration.create(
-                name, this.vpc, args.launchConfigurationArgs, { parent: this });
+            launchConfiguration = new AutoScalingLaunchConfiguration(
+                name, vpc, args.launchConfigurationArgs, { parent: _this });
         }
 
         // Use cloudformation to actually construct the autoscaling group.
-        _this.stack = new aws.cloudformation.Stack(name, {
+        const stack = new aws.cloudformation.Stack(name, {
             ...args,
-            name: this.launchConfiguration.stackName,
+            name: launchConfiguration.stackName,
             templateBody: getCloudFormationTemplate(
                 name,
-                this.launchConfiguration.id,
+                launchConfiguration.id,
                 subnetIds,
                 targetGroupArns,
                 utils.ifUndefined(args.templateParameters, {})),
-        }, { parent: this });
+        }, { parent: _this });
 
         // Now go and actually find the group created by cloudformation.  The id for the group will
         // be stored in `stack.outputs.Instances`.
-        _this.group = aws.autoscaling.Group.get(name, this.stack.outputs["Instances"], undefined, { parent: this });
+        const group = aws.autoscaling.Group.get(name, stack.outputs["Instances"], undefined, { parent: _this });
 
-        this.registerOutputs();
+        return {
+            vpc,
+            subnetIds,
+            targetGroups,
+            launchConfiguration,
+            stack,
+            group,
+        };
     }
 
     public scaleOnSchedule(name: string, args: ScheduleArgs, opts: pulumi.CustomResourceOptions = {}) {
@@ -113,7 +116,7 @@ export class AutoScalingGroup extends pulumi.ComponentResource {
         return new aws.autoscaling.Schedule(name, {
             ...args,
             recurrence,
-            autoscalingGroupName: this.group.name,
+            autoscalingGroupName: pulumi.output(this.group).apply(g => g.name),
             scheduledActionName: args.scheduledActionName || name,
             // Have to explicitly set these to -1.  If we pass 'undefined' through these will become
             // 0, which will actually set the size/capacity to that.
@@ -192,9 +195,10 @@ export class AutoScalingGroup extends pulumi.ComponentResource {
      * [AutoScalingGroup].  These [TargetGroup]s must have been provided to the [AutoScalingGroup]
      * when constructed using [AutoScalingGroupArgs.targetGroups].
      */
-    public scaleToTrackRequestCountPerTarget(name: string, args: targetTracking.ApplicationTargetGroupTrackingPolicyArgs, opts?: pulumi.ComponentResourceOptions) {
+    public async scaleToTrackRequestCountPerTarget(name: string, args: targetTracking.ApplicationTargetGroupTrackingPolicyArgs, opts?: pulumi.ComponentResourceOptions) {
         const targetGroup = args.targetGroup;
-        if (this.targetGroups.indexOf(targetGroup) < 0) {
+        const targetGroups = await this.targetGroups;
+        if (targetGroups.indexOf(targetGroup) < 0) {
             throw new Error("AutoScalingGroup must have been created with [args.targetGroup] to support scaling by request count.");
         }
 
@@ -224,7 +228,7 @@ export class AutoScalingGroup extends pulumi.ComponentResource {
     }
 }
 
-utils.Capture(AutoScalingGroup.prototype).initialize.doNotCapture = true;
+utils.Capture(AutoScalingGroup).initialize.doNotCapture = true;
 
 function ifUndefined<T>(val: T | undefined, defVal: T) {
     return val !== undefined ? val : defVal;

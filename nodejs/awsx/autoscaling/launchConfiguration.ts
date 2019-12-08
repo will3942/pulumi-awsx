@@ -20,66 +20,75 @@ import * as roleUtils from "../role";
 import * as utils from "./../utils";
 
 export class AutoScalingLaunchConfiguration extends pulumi.ComponentResource {
-    public readonly launchConfiguration!: aws.ec2.LaunchConfiguration;
-    public readonly id!: pulumi.Output<string>;
-    public readonly securityGroups!: x.ec2.SecurityGroup[];
-
-    public readonly instanceProfile!: aws.iam.InstanceProfile;
+    public readonly id: pulumi.Output<string>;
 
     /**
      * Name to give the auto-scaling-group's cloudformation stack name.
      */
-    public readonly stackName!: pulumi.Output<string>;
+    public readonly stackName: pulumi.Output<string>;
+
+    public readonly instanceProfile: Promise<aws.iam.InstanceProfile>;
+    public readonly launchConfiguration: Promise<aws.ec2.LaunchConfiguration>;
+    public readonly securityGroups: Promise<x.ec2.SecurityGroup[]>;
 
     /** @internal */
-    constructor(version: number, name: string, opts: pulumi.ComponentResourceOptions) {
+    constructor(name: string,  vpc: x.ec2.Vpc,
+                args: AutoScalingLaunchConfigurationArgs = {},
+                opts: pulumi.ComponentResourceOptions = {}) {
         super("awsx:x:autoscaling:AutoScalingLaunchConfiguration", name, {}, opts);
 
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not call [new AutoScalingLaunchConfiguration] directly. Use [AutoScalingLaunchConfiguration.create] instead.", this);
-        }
-    }
+        const data = AutoScalingLaunchConfiguration.initialize(this, name, vpc, args);
+        const dataOutput = pulumi.output(data);
 
-    public static async create(name: string, vpc: x.ec2.Vpc,
-                               args: AutoScalingLaunchConfigurationArgs = {},
-                               opts: pulumi.ComponentResourceOptions = {}): Promise<AutoScalingLaunchConfiguration> {
-        const result = new AutoScalingLaunchConfiguration(1, name, opts);
-        await result.initialize(name, vpc, args);
-        return result;
+        this.id = dataOutput.id;
+        this.stackName = dataOutput.stackName;
+
+        this.instanceProfile = data.then(d => d.instanceProfile);
+        this.securityGroups = data.then(d => d.securityGroups);
+        this.launchConfiguration = data.then(d => d.launchConfiguration);
+
+        this.registerOutputs();
     }
 
     /** @internal */
-    public async initialize(name: string, vpc: x.ec2.Vpc, args: AutoScalingLaunchConfigurationArgs) {
-        const _this = utils.Mutable(this);
+    public static async initialize(
+            _this: AutoScalingLaunchConfiguration, name: string,
+            vpc: x.ec2.Vpc, args: AutoScalingLaunchConfigurationArgs) {
 
         // Create the full name of our CloudFormation stack here explicitly. Since the CFN stack
         // references the launch configuration and vice-versa, we use this to break the cycle.
         // TODO[pulumi/pulumi#381]: Creating an S3 bucket is an inelegant way to get a durable,
         // unique name.
-        _this.stackName = pulumi.output(args.stackName).apply(sn => sn ? pulumi.output(sn) : new aws.s3.Bucket(name, {}, { parent: this }).id);
+        const stackName = pulumi.output(args.stackName).apply(sn => sn ? pulumi.output(sn) : new aws.s3.Bucket(name, {}, { parent: _this }).id);
 
         // Use the instance provided, or create a new one.
-        _this.instanceProfile = args.instanceProfile ||
+        const instanceProfile = args.instanceProfile ||
             AutoScalingLaunchConfiguration.createInstanceProfile(
-                name, /*assumeRolePolicy:*/ undefined, /*policyArns:*/ undefined, { parent: this });
+                name, /*assumeRolePolicy:*/ undefined, /*policyArns:*/ undefined, { parent: _this });
 
-        _this.securityGroups = await x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent: this }) || [];
+        const securityGroups = await x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent: _this }) || [];
 
-        _this.launchConfiguration = new aws.ec2.LaunchConfiguration(name, {
+        const launchConfiguration = new aws.ec2.LaunchConfiguration(name, {
             ...args,
-            securityGroups: this.securityGroups.map(g => g.id),
-            imageId: utils.ifUndefined(args.imageId, getEcsAmiId(args.ecsOptimizedAMIName, { parent: this })),
+            securityGroups: securityGroups.map(g => g.id),
+            imageId: utils.ifUndefined(args.imageId, getEcsAmiId(args.ecsOptimizedAMIName, { parent: _this })),
             instanceType: utils.ifUndefined(args.instanceType, "t2.micro"),
-            iamInstanceProfile: this.instanceProfile.id,
+            iamInstanceProfile: instanceProfile.id,
             enableMonitoring: utils.ifUndefined(args.enableMonitoring, true),
             placementTenancy: utils.ifUndefined(args.placementTenancy, "default"),
             rootBlockDevice: utils.ifUndefined(args.rootBlockDevice, defaultRootBlockDevice),
             ebsBlockDevices: utils.ifUndefined(args.ebsBlockDevices, defaultEbsBlockDevices),
-            userData: getInstanceUserData(args, this.stackName),
-        }, { parent: this });
-        _this.id = this.launchConfiguration.id;
+            userData: getInstanceUserData(args, stackName),
+        }, { parent: _this });
+        const id = launchConfiguration.id;
 
-        this.registerOutputs();
+        return {
+            stackName,
+            instanceProfile,
+            securityGroups,
+            launchConfiguration,
+            id,
+        };
     }
 
     public static defaultInstanceProfilePolicyDocument(): aws.iam.PolicyDocument {
@@ -124,7 +133,7 @@ export class AutoScalingLaunchConfiguration extends pulumi.ComponentResource {
     }
 }
 
-utils.Capture(AutoScalingLaunchConfiguration.prototype).initialize.doNotCapture = true;
+utils.Capture(AutoScalingLaunchConfiguration).initialize.doNotCapture = true;
 
 // http://docs.aws.amazon.com/AmazonECS/latest/developerguide/container_agent_versions.html
 async function getEcsAmiId(name: string | undefined, opts: pulumi.InvokeOptions): Promise<string> {
