@@ -22,42 +22,38 @@ export class InternetGateway
         extends pulumi.ComponentResource
         implements x.ec2.SubnetRouteProvider {
     public readonly vpc: x.ec2.Vpc;
-    public readonly internetGateway!: aws.ec2.InternetGateway;
+    public readonly internetGateway: Promise<aws.ec2.InternetGateway>;
 
     /** @internal */
-    constructor(version: number, name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs | ExistingInternetGatewayArgs, opts: pulumi.ComponentResourceOptions = {}) {
+    constructor(name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs, opts?: pulumi.ComponentResourceOptions)
+    constructor(name: string, vpc: x.ec2.Vpc, args: ExistingInternetGatewayArgs, opts?: pulumi.ComponentResourceOptions)
+    constructor(name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs | ExistingInternetGatewayArgs, opts: pulumi.ComponentResourceOptions = {}) {
         super("awsx:x:ec2:InternetGateway", name, {}, { parent: vpc, ...opts });
 
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not call [new InternetGateway] directly. Use [InternetGateway.create] instead.", this);
-        }
-
         this.vpc = vpc;
-    }
 
-    public static async create(name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs, opts?: pulumi.ComponentResourceOptions): Promise<InternetGateway>;
-    public static async create(name: string, vpc: x.ec2.Vpc, args: ExistingInternetGatewayArgs, opts?: pulumi.ComponentResourceOptions): Promise<InternetGateway>;
-    public static async create(name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs | ExistingInternetGatewayArgs, opts: pulumi.ComponentResourceOptions = {}): Promise<InternetGateway> {
-        const result = new InternetGateway(1, name, vpc, args, opts);
-        await result.initialize(name, vpc, args);
-        return result;
+        const data = InternetGateway.initialize(this, name, vpc, args);
+        this.internetGateway = data.then(d => d.internetGateway);
+
+        this.registerOutputs();
     }
 
     /** @internal */
-    public async initialize(name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs | ExistingInternetGatewayArgs) {
-        const _this = utils.Mutable(this);
-
+    public static async initialize(_this: InternetGateway, name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs | ExistingInternetGatewayArgs) {
+        let internetGateway: aws.ec2.InternetGateway;
         if (isExistingInternetGatewayArgs(args)) {
-            _this.internetGateway = args.internetGateway;
+            internetGateway = args.internetGateway;
         }
         else {
-            _this.internetGateway = new aws.ec2.InternetGateway(name, {
+            internetGateway = new aws.ec2.InternetGateway(name, {
                 ...args,
                 vpcId: vpc.vpc.id,
-            }, { parent: this });
+            }, { parent: _this });
         }
 
-        this.registerOutputs();
+        return {
+            internetGateway,
+        };
     }
 
     public route(name: string, opts: pulumi.ComponentResourceOptions): x.ec2.RouteArgs {
@@ -65,12 +61,12 @@ export class InternetGateway
             // From above: For IPv4 traffic, specify 0.0.0.0/0 in the Destination box, and
             // select the internet gateway ID in the Target list.
             destinationCidrBlock: "0.0.0.0/0",
-            gatewayId: this.internetGateway.id,
+            gatewayId: pulumi.output(this.internetGateway).apply(ig => ig.id),
         };
     }
 }
 
-utils.Capture(InternetGateway.prototype).initialize.doNotCapture = true;
+utils.Capture(InternetGateway).initialize.doNotCapture = true;
 
 export interface ExistingInternetGatewayArgs {
     /**
