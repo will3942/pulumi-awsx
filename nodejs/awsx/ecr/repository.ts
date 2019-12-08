@@ -31,34 +31,31 @@ import { RepositoryImage } from "./repositoryImage";
  * destination registry.
  */
 export class Repository extends pulumi.ComponentResource {
-    public readonly repository!: aws.ecr.Repository;
-    public readonly lifecyclePolicy: aws.ecr.LifecyclePolicy | undefined;
+    public readonly repository: Promise<aws.ecr.Repository>;
+    public readonly lifecyclePolicy: Promise<aws.ecr.LifecyclePolicy>;
 
     /** @internal */
-    constructor(version: number, name: string, opts: pulumi.ComponentResourceOptions) {
+    constructor(name: string, args: RepositoryArgs = {}, opts: pulumi.ComponentResourceOptions = {}) {
         super("awsx:ecr:Repository", name, {}, opts);
 
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not call [new Repository] directly. Use [Repository.create] instead.", this);
-        }
-    }
+        const data = Repository.initialize(this, name, args);
+        this.repository = data.then(d => d.repository);
+        this.lifecyclePolicy = data.then(d => d.lifecyclePolicy);
 
-    public static async create(name: string, args: RepositoryArgs = {}, opts: pulumi.ComponentResourceOptions = {}) {
-        const result = new Repository(1, name, opts);
-        await result.initialize(name, args);
-        return result;
+        this.registerOutputs();
     }
 
     /** @internal */
-    public async initialize(name: string, args: RepositoryArgs) {
-        const _this = utils.Mutable(this);
-
+    public static async initialize(_this: Repository, name: string, args: RepositoryArgs) {
         const lowerCaseName = name.toLowerCase();
 
-        _this.repository = args.repository || new aws.ecr.Repository(lowerCaseName, args, { parent: this });
-        _this.lifecyclePolicy = new LifecyclePolicy(lowerCaseName, this.repository, args.lifeCyclePolicyArgs, { parent: this });
+        const repository = args.repository || new aws.ecr.Repository(lowerCaseName, args, { parent: _this });
+        const lifecyclePolicy = new LifecyclePolicy(lowerCaseName, repository, args.lifeCyclePolicyArgs, { parent: _this });
 
-        this.registerOutputs();
+        return {
+            repository,
+            lifecyclePolicy,
+        };
     }
 
     /**
@@ -67,13 +64,13 @@ export class Repository extends pulumi.ComponentResource {
      * can be passed as the value to `image: repo.buildAndPushImage(...)` in an `ecs.Container`.
      */
     public buildAndPushImage(pathOrBuild: pulumi.Input<string | docker.DockerBuild>) {
-        return pulumi.all([pathOrBuild, this.repository.repositoryUrl, this.repository.registryId])
+        return pulumi.all([pathOrBuild, this.repository.then(r => r.repositoryUrl), this.repository.then(r => r.registryId)])
                      .apply(([pathOrBuild, repositoryUrl, registryId]) =>
                         computeImageFromAsset(pathOrBuild, repositoryUrl, registryId, this));
     }
 }
 
-utils.Capture(Repository.prototype).initialize.doNotCapture = true;
+utils.Capture(Repository).initialize.doNotCapture = true;
 
 /**
  * Creates a new [Repository] (optionally configured using [args]), builds the docker container
@@ -82,10 +79,10 @@ utils.Capture(Repository.prototype).initialize.doNotCapture = true;
  * repo.  This result type can be passed in as `image: ecr.buildAndPushImage(...)` for an
  * `ecs.Container`
  */
-export async function buildAndPushImage(
+export function buildAndPushImage(
     name: string, pathOrBuild: pulumi.Input<string | docker.DockerBuild>, args?: RepositoryArgs, opts?: pulumi.ComponentResourceOptions) {
 
-    const repo = await Repository.create(name, args, opts);
+    const repo = new Repository(name, args, opts);
     const image = repo.buildAndPushImage(pathOrBuild);
     return new RepositoryImage(repo, image);
 }
