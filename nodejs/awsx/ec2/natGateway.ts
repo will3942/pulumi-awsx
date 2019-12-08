@@ -22,37 +22,34 @@ export class NatGateway
         extends pulumi.ComponentResource
         implements x.ec2.SubnetRouteProvider {
 
-    public readonly natGatewayName: string;
     public readonly vpc: x.ec2.Vpc;
-    public readonly elasticIP: aws.ec2.Eip | undefined;
-    public readonly natGateway!: aws.ec2.NatGateway;
+    public readonly natGatewayName: string;
+
+    public readonly elasticIP: Promise<aws.ec2.Eip | undefined>;
+    public readonly natGateway: Promise<aws.ec2.NatGateway>;
 
     /** @internal */
-    constructor(version: number, name: string, vpc: x.ec2.Vpc, opts: pulumi.ComponentResourceOptions = {}) {
+    constructor(name: string, vpc: x.ec2.Vpc, args: NatGatewayArgs, opts?: pulumi.ComponentResourceOptions)
+    constructor(name: string, vpc: x.ec2.Vpc, args: ExistingNatGatewayArgs, opts?: pulumi.ComponentResourceOptions)
+    constructor(name: string, vpc: x.ec2.Vpc, args: NatGatewayArgs | ExistingNatGatewayArgs, opts: pulumi.ComponentResourceOptions = {}) {
         super("awsx:x:ec2:NatGateway", name, {}, { parent: vpc, ...opts });
-
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not call [new NatGateway] directly. Use [NatGateway.create] instead.", this);
-        }
 
         this.vpc = vpc;
         this.natGatewayName = name;
-    }
 
-    public static async create(name: string, vpc: x.ec2.Vpc, args: NatGatewayArgs, opts?: pulumi.ComponentResourceOptions): Promise<NatGateway>;
-    public static async create(name: string, vpc: x.ec2.Vpc, args: ExistingNatGatewayArgs, opts?: pulumi.ComponentResourceOptions): Promise<NatGateway>;
-    public static async create(name: string, vpc: x.ec2.Vpc, args: NatGatewayArgs | ExistingNatGatewayArgs, opts: pulumi.ComponentResourceOptions = {}): Promise<NatGateway> {
-        const result = new NatGateway(1, name, vpc, opts);
-        await result.initialize(name, vpc, args, opts);
-        return result;
+        const data = NatGateway.initialize(this, name, args);
+        this.elasticIP = data.then(d => d.elasticIP);
+        this.natGateway = data.then(d => d.natGateway);
+
+        this.registerOutputs();
     }
 
     /** @internal */
-    public async initialize(name: string, vpc: x.ec2.Vpc, args: NatGatewayArgs | ExistingNatGatewayArgs, opts: pulumi.ComponentResourceOptions = {}) {
-        const _this = utils.Mutable(this);
-
+    public static async initialize(_this: NatGateway, name: string, args: NatGatewayArgs | ExistingNatGatewayArgs, opts: pulumi.ComponentResourceOptions = {}) {
+        let natGateway: aws.ec2.NatGateway;
+        let elasticIP: aws.ec2.Eip | undefined;
         if (isExistingNatGatewayArgs(args)) {
-            _this.natGateway = args.natGateway;
+            natGateway = args.natGateway;
         }
         else {
             // from https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html
@@ -63,23 +60,26 @@ export class NatGateway
             // traffic to the NAT gateway. This enables instances in your private subnets to
             // communicate with the internet.
 
-            _this.elasticIP = new aws.ec2.Eip(name, {
+            elasticIP = new aws.ec2.Eip(name, {
                 vpc: true,
                 tags: { Name: name },
-            }, { parent: this });
+            }, { parent: _this });
 
             const subnetId = x.ec2.Subnet.isSubnetInstance(args.subnet)
                 ? args.subnet.id
                 : args.subnet;
 
-            _this.natGateway = new aws.ec2.NatGateway(name, {
+            natGateway = new aws.ec2.NatGateway(name, {
                 ...args,
                 subnetId,
-                allocationId: _this.elasticIP.id,
-            }, { parent: this });
+                allocationId: elasticIP.id,
+            }, { parent: _this });
         }
 
-        this.registerOutputs();
+        return {
+            natGateway,
+            elasticIP,
+        };
     }
 
     public route(name: string, opts: pulumi.ComponentResourceOptions): x.ec2.RouteArgs {
@@ -88,12 +88,12 @@ export class NatGateway
             // Choose Add another route. For Destination, type 0.0.0.0/0. For Target, select the ID
             // of your NAT gateway.
             destinationCidrBlock: "0.0.0.0/0",
-            natGatewayId: this.natGateway.id,
+            natGatewayId: pulumi.output(this.natGateway).apply(g => g.id),
         };
     }
 }
 
-utils.Capture(NatGateway.prototype).initialize.doNotCapture = true;
+utils.Capture(NatGateway).initialize.doNotCapture = true;
 
 export interface NatGatewayArgs {
     /**
