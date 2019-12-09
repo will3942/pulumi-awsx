@@ -23,6 +23,7 @@ export class EC2TaskDefinition extends ecs.TaskDefinition {
     constructor(name: string,
                 args: EC2TaskDefinitionArgs,
                 opts?: pulumi.ComponentResourceOptions) {
+
         if (!args.container && !args.containers) {
             throw new Error("Either [container] or [containers] must be provided");
         }
@@ -63,29 +64,41 @@ export class EC2TaskDefinition extends ecs.TaskDefinition {
 }
 
 export class EC2Service extends ecs.Service {
-    public readonly taskDefinition: EC2TaskDefinition;
+    public readonly taskDefinition: Promise<EC2TaskDefinition>;
 
     constructor(name: string,
                 args: EC2ServiceArgs,
-                opts?: pulumi.ComponentResourceOptions) {
+                opts: pulumi.ComponentResourceOptions = {}) {
 
+        const initResult = EC2Service.initializeService(name, args, opts);
+
+        super("awsx:x:ecs:EC2Service", name, initResult.then(r => r.baseArgs), opts);
+
+        this.taskDefinition = initResult.then(r => r.taskDefinition);
+
+        this.registerOutputs();
+    }
+
+    private static async initializeService(name: string, args: EC2ServiceArgs, opts: pulumi.ComponentResourceOptions) {
         if (!args.taskDefinition && !args.taskDefinitionArgs) {
             throw new Error("Either [taskDefinition] or [taskDefinitionArgs] must be provided");
         }
 
         const cluster = args.cluster || x.ecs.Cluster.getDefault();
+        const clusterVpc = await cluster.vpc;
+        const clusterSecurityGroups = await cluster.securityGroups;
 
         const taskDefinition = args.taskDefinition ||
             new ecs.EC2TaskDefinition(name, {
                 ...args.taskDefinitionArgs,
-                vpc: cluster.vpc,
+                vpc: clusterVpc,
             }, opts);
 
         const securityGroups = x.ec2.getSecurityGroups(
-            cluster.vpc, name, args.securityGroups || cluster.securityGroups, opts) || [];
-        const subnets = args.subnets || cluster.vpc.publicSubnetIds;
+            clusterVpc, name, args.securityGroups || clusterSecurityGroups, opts) || [];
+        const subnets = args.subnets || clusterVpc.publicSubnetIds;
 
-        super("awsx:x:ecs:EC2Service", name, {
+        const baseArgs: ecs.ServiceArgs = {
             ...args,
             taskDefinition,
             securityGroups,
@@ -104,11 +117,12 @@ export class EC2Service extends ecs.Service {
                     securityGroups: securityGroups.map(g => g.id),
                 };
             }),
-        }, /*isFargate:*/ false, opts);
+        };
 
-        this.taskDefinition = taskDefinition;
-
-        this.registerOutputs();
+        return {
+            baseArgs,
+            taskDefinition,
+        };
     }
 }
 

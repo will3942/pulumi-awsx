@@ -20,60 +20,84 @@ import * as x from "..";
 import * as utils from "./../utils";
 
 export abstract class Service extends pulumi.ComponentResource {
-    public readonly service: aws.ecs.Service;
-    public readonly cluster: ecs.Cluster;
-    public readonly taskDefinition: ecs.TaskDefinition;
+    public readonly service: Promise<aws.ecs.Service>;
+    public readonly cluster: Promise<ecs.Cluster>;
+    public readonly taskDefinition: Promise<ecs.TaskDefinition>;
 
     /**
      * Mapping from container in this service to the ELB listener exposing it through a load
      * balancer. Only present if a listener was provided in [Container.portMappings] or in
      * [Container.applicationListener] or [Container.networkListener].
      */
-    public readonly listeners: Record<string, x.lb.Listener> = {};
-    public readonly applicationListeners: Record<string, x.lb.ApplicationListener> = {};
-    public readonly networkListeners: Record<string, x.lb.NetworkListener> = {};
+    public readonly listeners: Promise<Record<string, x.lb.Listener>>;
+    public readonly applicationListeners: Promise<Record<string, x.lb.ApplicationListener>>;
+    public readonly networkListeners: Promise<Record<string, x.lb.NetworkListener>>;
 
     constructor(type: string, name: string,
-                args: ServiceArgs, isFargate: boolean,
+                args: Promise<ServiceArgs>,
                 opts: pulumi.ComponentResourceOptions = {}) {
-        super(type, name, args, opts);
+        super(type, name, {}, opts);
 
-        this.cluster = args.cluster || x.ecs.Cluster.getDefault();
+        const data = Service.initialize(this, name, args);
 
-        this.listeners = args.taskDefinition.listeners;
-        this.applicationListeners = args.taskDefinition.applicationListeners;
-        this.networkListeners = args.taskDefinition.networkListeners;
+        this.service = data.then(d => d.service);
+        this.cluster = data.then(d => d.cluster);
+        this.taskDefinition = data.then(d => d.taskDefinition);
+
+        this.listeners = data.then(d => d.listeners);
+        this.applicationListeners = data.then(d => d.applicationListeners);
+        this.networkListeners = data.then(d => d.networkListeners);
+    }
+
+    private static async initialize(parent: pulumi.Resource, name: string, argsPromise: Promise<ServiceArgs>) {
+        const args = await argsPromise;
+
+        const cluster = args.cluster || x.ecs.Cluster.getDefault();
+
+        const listeners = args.taskDefinition.listeners;
+        const applicationListeners = args.taskDefinition.applicationListeners;
+        const networkListeners = args.taskDefinition.networkListeners;
 
         // Determine which load balancers we're attached to based on the information supplied to the
         // containers for this service.
-        const loadBalancers = getLoadBalancers(this, name, args);
+        const loadBalancers = getLoadBalancers(parent, listeners, name, args);
 
-        this.service = new aws.ecs.Service(name, {
+        const service = new aws.ecs.Service(name, {
             ...args,
             loadBalancers,
-            cluster: this.cluster.cluster.arn,
+            cluster: cluster.cluster.arn,
             taskDefinition: args.taskDefinition.taskDefinition.arn,
             desiredCount: utils.ifUndefined(args.desiredCount, 1),
             launchType: utils.ifUndefined(args.launchType, "EC2"),
             waitForSteadyState: utils.ifUndefined(args.waitForSteadyState, true),
         }, {
-            parent: this,
+            parent,
             // If the cluster has any autoscaling groups, ensure the service depends on it being created.
-            dependsOn: this.cluster.autoScalingGroups.map(g => g.stack),
+            dependsOn: cluster.autoScalingGroups.map(g => g.stack),
         });
 
-        this.taskDefinition = args.taskDefinition;
+        const taskDefinition = args.taskDefinition;
+
+        return {
+            cluster,
+            listeners,
+            applicationListeners,
+            networkListeners,
+            service,
+            taskDefinition,
+        };
     }
 }
 
-function getLoadBalancers(service: ecs.Service, name: string, args: ServiceArgs) {
+function getLoadBalancers(parent: pulumi.Resource, listeners: Record<string, x.lb.Listener>,
+                          name: string, args: ServiceArgs) {
     const result: pulumi.Output<ServiceLoadBalancer>[] = [];
 
     // Get the initial set of load balancers if specified directly in our args.
     if (args.loadBalancers) {
         for (const obj of args.loadBalancers) {
             const loadBalancer = isServiceLoadBalancerProvider(obj)
-                ? obj.serviceLoadBalancer(name, service)
+                ? obj.serviceLoadBalancer(name, parent)
                 : obj;
             result.push(pulumi.output(loadBalancer));
         }
@@ -97,9 +121,9 @@ function getLoadBalancers(service: ecs.Service, name: string, args: ServiceArgs)
 
     // Finally see if we were directly given load balancing listeners to associate our containers
     // with. If so, use their information to populate our LB information.
-    for (const containerName of Object.keys(service.listeners)) {
+    for (const containerName of Object.keys(listeners)) {
         if (!containerLoadBalancerProviders.has(containerName)) {
-            containerLoadBalancerProviders.set(containerName, service.listeners[containerName]);
+            containerLoadBalancerProviders.set(containerName, listeners[containerName]);
         }
     }
 
@@ -111,7 +135,7 @@ function getLoadBalancers(service: ecs.Service, name: string, args: ServiceArgs)
 
     function processContainerLoadBalancerProvider(containerName: string, prov: ecs.ContainerLoadBalancerProvider) {
         // Containers don't know their own name.  So we add the name in here on their behalf.
-        const containerLoadBalancer = prov.containerLoadBalancer(name, service);
+        const containerLoadBalancer = prov.containerLoadBalancer(name, parent);
         const serviceLoadBalancer = pulumi.output(containerLoadBalancer).apply(
             lb => ({ ...lb, containerName }));
         result.push(serviceLoadBalancer);

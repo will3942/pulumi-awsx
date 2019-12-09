@@ -190,30 +190,42 @@ function computeFargateMemoryAndCPU(containers: Record<string, ecs.Container>) {
 }
 
 export class FargateService extends ecs.Service {
-    public readonly taskDefinition: FargateTaskDefinition;
+    public readonly taskDefinition: Promise<FargateTaskDefinition>;
 
     constructor(name: string,
                 args: FargateServiceArgs,
-                opts?: pulumi.ComponentResourceOptions) {
+                opts: pulumi.ComponentResourceOptions = {}) {
 
+        const initResult = FargateService.initializeService(name, args, opts);
+
+        super("awsx:x:ecs:FargateService", name, initResult.then(r => r.baseArgs), opts);
+
+        this.taskDefinition = initResult.then(r => r.taskDefinition);
+
+        this.registerOutputs();
+    }
+
+    private static async initializeService(name: string, args: FargateServiceArgs, opts: pulumi.ComponentResourceOptions) {
         if (!args.taskDefinition && !args.taskDefinitionArgs) {
             throw new Error("Either [taskDefinition] or [taskDefinitionArgs] must be provided");
         }
 
         const cluster = args.cluster || x.ecs.Cluster.getDefault();
+        const clusterVpc = await cluster.vpc;
+        const clusterSecurityGroups = await cluster.securityGroups;
 
         const taskDefinition = args.taskDefinition ||
             new ecs.FargateTaskDefinition(name, {
                 ...args.taskDefinitionArgs,
-                vpc: cluster.vpc,
+                vpc: clusterVpc,
             }, opts);
 
         const assignPublicIp = utils.ifUndefined(args.assignPublicIp, true);
         const securityGroups = x.ec2.getSecurityGroups(
-            cluster.vpc, name, args.securityGroups || cluster.securityGroups, opts) || [];
-        const subnets = getSubnets(cluster, args.subnets, assignPublicIp);
+            clusterVpc, name, args.securityGroups || clusterSecurityGroups, opts) || [];
+        const subnets = await getSubnets(cluster, args.subnets, assignPublicIp);
 
-        super("awsx:x:ecs:FargateService", name, {
+        const baseArgs: ecs.ServiceArgs = {
             ...args,
             taskDefinition,
             securityGroups,
@@ -223,26 +235,28 @@ export class FargateService extends ecs.Service {
                 assignPublicIp,
                 securityGroups: securityGroups.map(g => g.id),
             },
-        },  /*isFargate:*/ true, opts);
+        };
 
-        this.taskDefinition = taskDefinition;
-
-        this.registerOutputs();
+        return {
+            taskDefinition,
+            baseArgs,
+        };
     }
 }
 
-function getSubnets(
+async function getSubnets(
         cluster: ecs.Cluster,
         subnets: pulumi.Input<pulumi.Input<string>[]> | undefined,
         assignPublicIp: pulumi.Output<boolean>) {
 
+    const vpc = await cluster.vpc;
     return pulumi.all([subnets, assignPublicIp])
                  .apply(([subnets, assignPublicIp]) => {
         if (subnets) {
             return subnets;
         }
 
-        return assignPublicIp ? cluster.vpc.publicSubnetIds : cluster.vpc.privateSubnetIds;
+        return assignPublicIp ? vpc.publicSubnetIds : vpc.privateSubnetIds;
     });
 }
 

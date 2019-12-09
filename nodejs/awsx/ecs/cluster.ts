@@ -32,11 +32,11 @@ export class Cluster
     /**
      * The network in which to create this cluster.
      */
-    public readonly vpc: x.ec2.Vpc;
+    public readonly vpc: Promise<x.ec2.Vpc>;
     /**
      * Security groups associated with this this ECS Cluster.
      */
-    public readonly securityGroups: x.ec2.SecurityGroup[];
+    public readonly securityGroups: Promise<x.ec2.SecurityGroup[]>;
 
     public readonly extraBootcmdLines: () => pulumi.Input<x.autoscaling.UserDataLine[]>;
 
@@ -50,18 +50,29 @@ export class Cluster
         this.cluster = cluster;
         this.id = cluster.id;
 
-        this.vpc = args.vpc || x.ec2.Vpc.getDefault({ parent: this });
-
-        // IDEA: Can we re-use the network's default security group instead of creating a specific
-        // new security group in the Cluster layer?  This may allow us to share a single Security Group
-        // across both instance and Lambda compute.
-        this.securityGroups = x.ec2.getSecurityGroups(this.vpc, name, args.securityGroups, { parent: this }) ||
-            [Cluster.createDefaultSecurityGroup(name, this.vpc, { parent: this })];
+        const data = Cluster.initialize(this, args);
+        this.vpc = data.then(d => d.vpc);
+        this.securityGroups = data.then(d => d.securityGroups);
 
         this.extraBootcmdLines = () => cluster.id.apply(clusterId =>
             [{ contents: `- echo ECS_CLUSTER='${clusterId}' >> /etc/ecs/ecs.config` }]);
 
         this.registerOutputs();
+    }
+
+    private static async initialize(parent: pulumi.Resource, args: ClusterArgs) {
+        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent });
+
+        // IDEA: Can we re-use the network's default security group instead of creating a specific
+        // new security group in the Cluster layer?  This may allow us to share a single Security Group
+        // across both instance and Lambda compute.
+        const securityGroups = x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent }) ||
+            [await Cluster.createDefaultSecurityGroup(name, vpc, { parent })];
+
+        return {
+            vpc,
+            securityGroups,
+        };
     }
 
     public addAutoScalingGroup(group: x.autoscaling.AutoScalingGroup) {
@@ -74,15 +85,15 @@ export class Cluster
      * this cluster as well as using this cluster to initialize both its securityGroups and
      * launchConfiguration userData.
      */
-    public createAutoScalingGroup(
+    public async createAutoScalingGroup(
             name: string,
             args: x.autoscaling.AutoScalingGroupArgs = {},
             opts: pulumi.ComponentResourceOptions = {}) {
 
-        args.vpc = args.vpc || this.vpc;
+        args.vpc = args.vpc || await this.vpc;
         args.launchConfigurationArgs = {
             // default to our security groups if the caller didn't provide their own.
-            securityGroups: this.securityGroups,
+            securityGroups: await this.securityGroups,
             userData: this,
             ...args.launchConfigurationArgs,
         };
@@ -106,12 +117,12 @@ export class Cluster
         return defaultCluster;
     }
 
-    public static createDefaultSecurityGroup(
+    public static async createDefaultSecurityGroup(
             name: string,
             vpc?: x.ec2.Vpc,
-            opts: pulumi.ComponentResourceOptions = {}): x.ec2.SecurityGroup {
+            opts: pulumi.ComponentResourceOptions = {}): Promise<x.ec2.SecurityGroup> {
 
-        vpc = vpc || x.ec2.Vpc.getDefault(opts);
+        vpc = vpc || await x.ec2.Vpc.getDefault(opts);
         const securityGroup = new x.ec2.SecurityGroup(name, {
             vpc,
             tags: { Name: name },
