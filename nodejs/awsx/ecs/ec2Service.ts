@@ -88,7 +88,7 @@ export class EC2Service extends ecs.Service {
     }
 
     private static async initializeService(
-            _this: EC2Service, name: string, args: EC2ServiceArgs, opts: pulumi.ComponentResourceOptions) {
+            parent: pulumi.Resource, name: string, args: EC2ServiceArgs, opts: pulumi.ComponentResourceOptions) {
 
         if (!args.taskDefinition && !args.taskDefinitionArgs) {
             throw new Error("Either [taskDefinition] or [taskDefinitionArgs] must be provided");
@@ -108,7 +108,7 @@ export class EC2Service extends ecs.Service {
         const subnets = args.subnets || clusterVpc.publicSubnetIds;
 
         const rawTaskDefinition = await taskDefinition.taskDefinition;
-        const baseResult = await ecs.Service.initialize(_this, name, {
+        const baseResult = await ecs.Service.initialize(parent, name, {
             ...args,
             taskDefinition,
             securityGroups,

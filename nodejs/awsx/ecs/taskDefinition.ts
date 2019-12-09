@@ -67,19 +67,19 @@ export abstract class TaskDefinition extends pulumi.ComponentResource {
     }
 
     /** @internal */
-    public static async initialize(_this: TaskDefinition, name: string, isFargate: boolean, args: TaskDefinitionArgs) {
+    public static async initialize(parent: pulumi.Resource, name: string, isFargate: boolean, args: TaskDefinitionArgs) {
         const logGroup = args.logGroup === null ? undefined :
                          args.logGroup ? args.logGroup : new aws.cloudwatch.LogGroup(name, {
             retentionInDays: 1,
-        }, { parent: _this });
+        }, { parent });
 
         const taskRole = args.taskRole === null ? undefined :
                          args.taskRole ? args.taskRole : TaskDefinition.createTaskRole(
-            `${name}-task`, /*assumeRolePolicy*/ undefined, /*policyArns*/ undefined, { parent: _this });
+            `${name}-task`, /*assumeRolePolicy*/ undefined, /*policyArns*/ undefined, { parent });
 
         const executionRole = args.taskRole === null ? undefined :
                               args.executionRole ? args.executionRole : TaskDefinition.createExecutionRole(
-            `${name}-execution`, /*assumeRolePolicy*/ undefined, /*policyArns*/ undefined, { parent: _this });
+            `${name}-execution`, /*assumeRolePolicy*/ undefined, /*policyArns*/ undefined, { parent });
 
         const containers = args.containers;
 
@@ -87,7 +87,7 @@ export abstract class TaskDefinition extends pulumi.ComponentResource {
         const networkListeners: Record<string, x.lb.NetworkListener> = {};
 
         const containerDefinitions = await computeContainerDefinitions(
-            _this, name, args.vpc, containers, applicationListeners, networkListeners, logGroup);
+            parent, name, args.vpc, containers, applicationListeners, networkListeners, logGroup);
         const listeners = {...applicationListeners, ...networkListeners };
 
         const containerString = containerDefinitions.apply(d => JSON.stringify(d));
@@ -100,7 +100,7 @@ export abstract class TaskDefinition extends pulumi.ComponentResource {
             taskRoleArn: taskRole ? taskRole.arn : undefined,
             executionRoleArn: executionRole ? executionRole.arn : undefined,
             containerDefinitions: containerString,
-        }, { parent: _this });
+        }, { parent });
 
         return {
             taskDefinition,

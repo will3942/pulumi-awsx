@@ -57,18 +57,18 @@ export class Cluster
     }
 
     /** @internal */
-    public static async initialize(_this: Cluster, name: string, args: ClusterArgs) {
+    public static async initialize(parent: pulumi.Resource, name: string, args: ClusterArgs) {
         // First create an ECS cluster.
-        const cluster = getOrCreateCluster(name, args, _this);
+        const cluster = getOrCreateCluster(name, args, parent);
         const id = cluster.id;
 
-        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent: _this });
+        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent });
 
         // IDEA: Can we re-use the network's default security group instead of creating a specific
         // new security group in the Cluster layer?  This may allow us to share a single Security Group
         // across both instance and Lambda compute.
-        const securityGroups = x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent: _this }) ||
-            [await Cluster.createDefaultSecurityGroup(name, vpc, { parent: _this })];
+        const securityGroups = x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent }) ||
+            [await Cluster.createDefaultSecurityGroup(name, vpc, { parent })];
 
         const extraBootcmdLines = cluster.id.apply(clusterId =>
             [{ contents: `- echo ECS_CLUSTER='${clusterId}' >> /etc/ecs/ecs.config` }]);

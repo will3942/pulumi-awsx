@@ -55,7 +55,7 @@ export class Subnet extends pulumi.ComponentResource {
     }
 
     /** @internal */
-    public static async initialize(_this: Subnet, name: string, vpc: x.ec2.Vpc, args: SubnetArgs | ExistingSubnetArgs, opts: pulumi.ComponentResourceOptions) {
+    public static async initialize(parent: pulumi.Resource, name: string, vpc: x.ec2.Vpc, args: SubnetArgs | ExistingSubnetArgs, opts: pulumi.ComponentResourceOptions) {
         let subnet: aws.ec2.Subnet;
         let id: pulumi.Output<string>;
         let routeTable: aws.ec2.RouteTable | undefined;
@@ -77,19 +77,19 @@ export class Subnet extends pulumi.ComponentResource {
                 ...args,
                 assignIpv6AddressOnCreation,
             }, {
-                parent: _this,
+                parent,
                 // See https://github.com/pulumi/pulumi-awsx/issues/398.
                 ignoreChanges: opts.ignoreChanges,
             });
 
             routeTable = new aws.ec2.RouteTable(name, {
                 vpcId: vpc.id,
-            }, { parent: _this });
+            }, { parent });
 
             routeTableAssociation = new aws.ec2.RouteTableAssociation(name, {
                 routeTableId: routeTable.id,
                 subnetId: subnet.id,
-            }, { parent: _this });
+            }, { parent });
 
             id = pulumi.all([subnet.id, routeTableAssociation.id])
                        .apply(([id]) => id);

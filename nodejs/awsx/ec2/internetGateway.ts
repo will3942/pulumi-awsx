@@ -39,7 +39,7 @@ export class InternetGateway
     }
 
     /** @internal */
-    public static async initialize(_this: InternetGateway, name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs | ExistingInternetGatewayArgs) {
+    public static async initialize(parent: pulumi.Resource, name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs | ExistingInternetGatewayArgs) {
         let internetGateway: aws.ec2.InternetGateway;
         if (isExistingInternetGatewayArgs(args)) {
             internetGateway = args.internetGateway;
@@ -48,7 +48,7 @@ export class InternetGateway
             internetGateway = new aws.ec2.InternetGateway(name, {
                 ...args,
                 vpcId: vpc.vpc.id,
-            }, { parent: _this });
+            }, { parent });
         }
 
         return {

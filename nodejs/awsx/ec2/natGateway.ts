@@ -45,7 +45,7 @@ export class NatGateway
     }
 
     /** @internal */
-    public static async initialize(_this: NatGateway, name: string, args: NatGatewayArgs | ExistingNatGatewayArgs, opts: pulumi.ComponentResourceOptions = {}) {
+    public static async initialize(parent: pulumi.Resource, name: string, args: NatGatewayArgs | ExistingNatGatewayArgs, opts: pulumi.ComponentResourceOptions = {}) {
         let natGateway: aws.ec2.NatGateway;
         let elasticIP: aws.ec2.Eip | undefined;
         if (isExistingNatGatewayArgs(args)) {
@@ -63,7 +63,7 @@ export class NatGateway
             elasticIP = new aws.ec2.Eip(name, {
                 vpc: true,
                 tags: { Name: name },
-            }, { parent: _this });
+            }, { parent });
 
             const subnetId = x.ec2.Subnet.isSubnetInstance(args.subnet)
                 ? args.subnet.id
@@ -73,7 +73,7 @@ export class NatGateway
                 ...args,
                 subnetId,
                 allocationId: elasticIP.id,
-            }, { parent: _this });
+            }, { parent });
         }
 
         return {

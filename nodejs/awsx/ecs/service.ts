@@ -39,7 +39,7 @@ export abstract class Service extends pulumi.ComponentResource {
     }
 
     /** @internal */
-    public static async initialize(_this: Service, name: string, args: ServiceArgs) {
+    public static async initialize(parent: pulumi.Resource, name: string, args: ServiceArgs) {
         const cluster = args.cluster || x.ecs.Cluster.getDefault();
         const rawCluster = await cluster.cluster;
 
@@ -49,7 +49,7 @@ export abstract class Service extends pulumi.ComponentResource {
 
         // Determine which load balancers we're attached to based on the information supplied to the
         // containers for this service.
-        const loadBalancers = await getLoadBalancers(_this, listeners, name, args);
+        const loadBalancers = await getLoadBalancers(parent, listeners, name, args);
 
         const rawTaskDefinition = await args.taskDefinition.taskDefinition;
 
@@ -62,7 +62,7 @@ export abstract class Service extends pulumi.ComponentResource {
             launchType: utils.ifUndefined(args.launchType, "EC2"),
             waitForSteadyState: utils.ifUndefined(args.waitForSteadyState, true),
         }, {
-            parent: _this,
+            parent,
             // If the cluster has any autoscaling groups, ensure the service depends on it being created.
             dependsOn: cluster.autoScalingGroups.map(g => g.stack),
         });
@@ -82,14 +82,14 @@ export abstract class Service extends pulumi.ComponentResource {
 
 utils.Capture(Service).initialize.doNotCapture = true;
 
-async function getLoadBalancers(service: ecs.Service, listeners: Record<string, x.lb.Listener>, name: string, args: ServiceArgs) {
+async function getLoadBalancers(parent: pulumi.Resource, listeners: Record<string, x.lb.Listener>, name: string, args: ServiceArgs) {
     const result: pulumi.Output<ServiceLoadBalancer>[] = [];
 
     // Get the initial set of load balancers if specified directly in our args.
     if (args.loadBalancers) {
         for (const obj of args.loadBalancers) {
             const loadBalancer = isServiceLoadBalancerProvider(obj)
-                ? obj.serviceLoadBalancer(name, service)
+                ? obj.serviceLoadBalancer(name, parent)
                 : obj;
             result.push(pulumi.output(loadBalancer));
         }
@@ -129,7 +129,7 @@ async function getLoadBalancers(service: ecs.Service, listeners: Record<string, 
 
     function processContainerLoadBalancerProvider(containerName: string, prov: ecs.ContainerLoadBalancerProvider) {
         // Containers don't know their own name.  So we add the name in here on their behalf.
-        const containerLoadBalancer = prov.containerLoadBalancer(name, service);
+        const containerLoadBalancer = prov.containerLoadBalancer(name, parent);
         const serviceLoadBalancer = pulumi.output(containerLoadBalancer).apply(
             lb => ({ ...lb, containerName }));
         result.push(serviceLoadBalancer);

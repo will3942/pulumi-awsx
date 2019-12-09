@@ -124,11 +124,11 @@ export abstract class SecurityGroupRule extends pulumi.ComponentResource {
     }
 
     /** @internal */
-    public static async initialize(_this: SecurityGroupRule, name: string, securityGroup: x.ec2.SecurityGroup, args: SecurityGroupRuleArgs) {
+    public static async initialize(parent: pulumi.Resource, name: string, securityGroup: x.ec2.SecurityGroup, args: SecurityGroupRuleArgs) {
         const securityGroupRule = new aws.ec2.SecurityGroupRule(name, {
             ...args,
             securityGroupId: securityGroup.id,
-        }, { parent: _this });
+        }, { parent });
 
         return {
             securityGroupRule,

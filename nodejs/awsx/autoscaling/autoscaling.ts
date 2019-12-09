@@ -65,8 +65,8 @@ export class AutoScalingGroup extends pulumi.ComponentResource {
     }
 
     /** @internal */
-    public static async initialize(_this: AutoScalingGroup, name: string, args: AutoScalingGroupArgs) {
-        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent: _this });
+    public static async initialize(parent: pulumi.Resource, name: string, args: AutoScalingGroupArgs) {
+        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent });
         const subnetIds = args.subnetIds || vpc.privateSubnetIds;
         const targetGroups = args.targetGroups || [];
         const targetGroupArns = targetGroups.map(g => g.targetGroup.arn);
@@ -78,7 +78,7 @@ export class AutoScalingGroup extends pulumi.ComponentResource {
         }
         else {
             launchConfiguration = new AutoScalingLaunchConfiguration(
-                name, vpc, args.launchConfigurationArgs, { parent: _this });
+                name, vpc, args.launchConfigurationArgs, { parent });
         }
 
         // Use cloudformation to actually construct the autoscaling group.
@@ -91,11 +91,11 @@ export class AutoScalingGroup extends pulumi.ComponentResource {
                 subnetIds,
                 targetGroupArns,
                 utils.ifUndefined(args.templateParameters, {})),
-        }, { parent: _this });
+        }, { parent });
 
         // Now go and actually find the group created by cloudformation.  The id for the group will
         // be stored in `stack.outputs.Instances`.
-        const group = aws.autoscaling.Group.get(name, stack.outputs["Instances"], undefined, { parent: _this });
+        const group = aws.autoscaling.Group.get(name, stack.outputs["Instances"], undefined, { parent });
 
         return {
             vpc,

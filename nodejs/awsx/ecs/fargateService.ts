@@ -212,7 +212,7 @@ export class FargateService extends ecs.Service {
     }
 
     /** @internal */
-    public static async initializeService(_this: FargateService, name: string, args: FargateServiceArgs, opts: pulumi.ComponentResourceOptions) {
+    public static async initializeService(parent: pulumi.Resource, name: string, args: FargateServiceArgs, opts: pulumi.ComponentResourceOptions) {
         if (!args.taskDefinition && !args.taskDefinitionArgs) {
             throw new Error("Either [taskDefinition] or [taskDefinitionArgs] must be provided");
         }
@@ -230,7 +230,7 @@ export class FargateService extends ecs.Service {
             clusterVpc, name, args.securityGroups || await cluster.securityGroups, opts) || [];
         const subnets = await getSubnets(cluster, args.subnets, assignPublicIp);
 
-        const baseResult = await ecs.Service.initialize(_this, name, {
+        const baseResult = await ecs.Service.initialize(parent, name, {
             ...args,
             taskDefinition,
             securityGroups,

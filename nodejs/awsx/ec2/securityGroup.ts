@@ -65,12 +65,12 @@ export class SecurityGroup extends pulumi.ComponentResource {
     }
 
     /** @internal */
-    public static async initialize(_this: SecurityGroup, name: string, args: SecurityGroupArgs) {
-        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent: _this });
+    public static async initialize(parent: pulumi.Resource, name: string, args: SecurityGroupArgs) {
+        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent });
         const securityGroup = args.securityGroup || new aws.ec2.SecurityGroup(name, {
             ...args,
             vpcId: vpc.id,
-        }, { parent: _this });
+        }, { parent });
 
         const id = securityGroup.id;
 

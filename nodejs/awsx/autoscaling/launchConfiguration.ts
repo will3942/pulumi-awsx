@@ -52,26 +52,26 @@ export class AutoScalingLaunchConfiguration extends pulumi.ComponentResource {
 
     /** @internal */
     public static async initialize(
-            _this: AutoScalingLaunchConfiguration, name: string,
+            parent: pulumi.Resource, name: string,
             vpc: x.ec2.Vpc, args: AutoScalingLaunchConfigurationArgs) {
 
         // Create the full name of our CloudFormation stack here explicitly. Since the CFN stack
         // references the launch configuration and vice-versa, we use this to break the cycle.
         // TODO[pulumi/pulumi#381]: Creating an S3 bucket is an inelegant way to get a durable,
         // unique name.
-        const stackName = pulumi.output(args.stackName).apply(sn => sn ? pulumi.output(sn) : new aws.s3.Bucket(name, {}, { parent: _this }).id);
+        const stackName = pulumi.output(args.stackName).apply(sn => sn ? pulumi.output(sn) : new aws.s3.Bucket(name, {}, { parent }).id);
 
         // Use the instance provided, or create a new one.
         const instanceProfile = args.instanceProfile ||
             AutoScalingLaunchConfiguration.createInstanceProfile(
-                name, /*assumeRolePolicy:*/ undefined, /*policyArns:*/ undefined, { parent: _this });
+                name, /*assumeRolePolicy:*/ undefined, /*policyArns:*/ undefined, { parent });
 
-        const securityGroups = x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent: _this }) || [];
+        const securityGroups = x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent }) || [];
 
         const launchConfiguration = new aws.ec2.LaunchConfiguration(name, {
             ...args,
             securityGroups: securityGroups.map(g => g.id),
-            imageId: utils.ifUndefined(args.imageId, getEcsAmiId(args.ecsOptimizedAMIName, { parent: _this })),
+            imageId: utils.ifUndefined(args.imageId, getEcsAmiId(args.ecsOptimizedAMIName, { parent })),
             instanceType: utils.ifUndefined(args.instanceType, "t2.micro"),
             iamInstanceProfile: instanceProfile.id,
             enableMonitoring: utils.ifUndefined(args.enableMonitoring, true),
@@ -79,7 +79,7 @@ export class AutoScalingLaunchConfiguration extends pulumi.ComponentResource {
             rootBlockDevice: utils.ifUndefined(args.rootBlockDevice, defaultRootBlockDevice),
             ebsBlockDevices: utils.ifUndefined(args.ebsBlockDevices, defaultEbsBlockDevices),
             userData: getInstanceUserData(args, stackName),
-        }, { parent: _this });
+        }, { parent });
         const id = launchConfiguration.id;
 
         return {
