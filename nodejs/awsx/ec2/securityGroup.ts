@@ -19,9 +19,9 @@ import * as x from "..";
 import * as utils from "./../utils";
 
 export class SecurityGroup extends pulumi.ComponentResource {
-    public readonly securityGroup: aws.ec2.SecurityGroup;
+    public readonly securityGroup: Promise<aws.ec2.SecurityGroup>;
     public readonly id: pulumi.Output<string>;
-    public readonly vpc: x.ec2.Vpc;
+    public readonly vpc: Promise<x.ec2.Vpc>;
 
     public readonly egressRules: x.ec2.IngressSecurityGroupRule[] = [];
     public readonly ingressRules: x.ec2.IngressSecurityGroupRule[] = [];
@@ -47,13 +47,11 @@ export class SecurityGroup extends pulumi.ComponentResource {
         delete args.egress;
         delete args.ingress;
 
-        this.vpc = args.vpc || x.ec2.Vpc.getDefault({ parent: this });
-        this.securityGroup = args.securityGroup || new aws.ec2.SecurityGroup(name, {
-            ...args,
-            vpcId: this.vpc.id,
-        }, { parent: this });
+        const data = SecurityGroup.initialize(this, args);
+        this.vpc = data.then(d => d.vpc);
+        this.securityGroup = data.then(d => d.securityGroup);
 
-        this.id = this.securityGroup.id;
+        this.id = pulumi.output(this.securityGroup).apply(g => g.id);
 
         this.registerOutputs();
 
@@ -64,6 +62,19 @@ export class SecurityGroup extends pulumi.ComponentResource {
         for (let i = 0, n = ingressRules.length; i < n; i++) {
             this.createIngressRule(`${name}-ingress-${i}`, ingressRules[i]);
         }
+    }
+
+    private static async initialize(parent: pulumi.Resource, args: SecurityGroupArgs) {
+        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent });
+        const securityGroup = args.securityGroup || new aws.ec2.SecurityGroup(name, {
+            ...args,
+            vpcId: vpc.id,
+        }, { parent });
+
+        return {
+            vpc,
+            securityGroup,
+        };
     }
 
     /** @internal */
