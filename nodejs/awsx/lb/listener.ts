@@ -58,9 +58,9 @@ export abstract class Listener
     }
 
     /** @internal */
-    public static async initialize(parent: pulumi.Resource, name: string,
-                                   defaultListenerAction: ListenerDefaultAction | undefined,
-                                   args: ListenerArgs) {
+    public static initialize(parent: pulumi.Resource, name: string,
+                             defaultListenerAction: ListenerDefaultAction | undefined,
+                             args: ListenerArgs) {
         // If SSL is used, and no ssl policy was  we automatically insert the recommended ELB
         // security policy from:
         // http://docs.aws.amazon.com/elasticloadbalancing/latest/application/create-https-listener.html.

@@ -214,21 +214,13 @@ function computePortInfo(
 
 export class ApplicationListener extends mod.Listener {
     public readonly loadBalancer: ApplicationLoadBalancer;
-    public readonly defaultTargetGroup?: x.lb.ApplicationTargetGroup;
+    public readonly defaultTargetGroup: x.lb.ApplicationTargetGroup | undefined;
 
     // tslint:disable-next-line:variable-name
-    private readonly __isApplicationListenerInstance: boolean = true;
+    private readonly __isApplicationListenerInstance: boolean;
 
     /** @internal */
-    constructor(version: number, name: string, loadBalancer: ApplicationLoadBalancer, opts: pulumi.ComponentResourceOptions) {
-        super(version, "awsx:lb:ApplicationListener", name, loadBalancer, opts);
-        this.loadBalancer = loadBalancer;
-    }
-
-    public static async create(name: string,
-                               args: ApplicationListenerArgs,
-                               opts: pulumi.ComponentResourceOptions = {}) {
-
+    constructor(name: string, args: ApplicationListenerArgs, opts: pulumi.ComponentResourceOptions = {}) {
         const argCount = (args.defaultAction ? 1 : 0) +
                          (args.defaultActions ? 1 : 0) +
                          (args.targetGroup ? 1 : 0);
@@ -239,32 +231,38 @@ export class ApplicationListener extends mod.Listener {
 
         const loadBalancer = pulumi.Resource.isInstance(args.loadBalancer)
             ? args.loadBalancer
-            : await ApplicationLoadBalancer.create(name, {
+            : new ApplicationLoadBalancer(name, {
                 ...args.loadBalancer,
                 vpc: args.vpc,
                 name: args.name,
             }, opts);
 
-        const result = new ApplicationListener(1, name, loadBalancer, opts);
-        await result.initializeListener(name, loadBalancer, args, opts);
-        return result;
+        super("awsx:lb:ApplicationListener", name, loadBalancer, opts);
+
+        this.__isApplicationListenerInstance = true;
+        this.loadBalancer = loadBalancer;
+
+        const data = ApplicationListener.initializeListener(this, name, loadBalancer, args, opts);
+
+        this.registerOutputs();
     }
 
     /** @internal */
-    public async initializeListener(name: string,
-                                    loadBalancer: ApplicationLoadBalancer,
-                                    args: ApplicationListenerArgs,
-                                    opts: pulumi.ComponentResourceOptions) {
+    public static initializeListener(parent: pulumi.Resource,
+                                     name: string,
+                                     loadBalancer: ApplicationLoadBalancer,
+                                     args: ApplicationListenerArgs,
+                                     opts: pulumi.ComponentResourceOptions) {
 
         const { port, protocol } = computePortInfo(args.port, args.protocol);
-        const { defaultActions, defaultListener } = await getDefaultActions(
+        const { defaultActions, defaultListener } = getDefaultActions(
             name, loadBalancer, args, port, protocol, opts);
 
         // Pass along the target as the defaultTarget for this listener.  This allows this listener
         // to defer to it for ContainerPortMappings information.  this allows this listener to be
         // passed in as the portMappings information needed for a Service.
 
-        await this.initialize(name, defaultListener, {
+        const baseResult = mod.Listener.initialize(parent, name, defaultListener, {
             ...args,
             defaultActions,
             loadBalancer,
@@ -287,14 +285,12 @@ export class ApplicationListener extends mod.Listener {
                 description: pulumi.interpolate`Externally available at port ${port}`,
             };
 
-            for (let i = 0, n = this.loadBalancer.securityGroups.length; i < n; i++) {
-                const securityGroup = this.loadBalancer.securityGroups[i];
-                await securityGroup.createIngressRule(`${name}-external-${i}-ingress`, args, { parent: this });
-                await securityGroup.createEgressRule(`${name}-external-${i}-egress`, args, { parent: this });
+            for (let i = 0, n = loadBalancer.securityGroups.length; i < n; i++) {
+                const securityGroup = loadBalancer.securityGroups[i];
+                securityGroup.createIngressRule(`${name}-external-${i}-ingress`, args, { parent });
+                securityGroup.createEgressRule(`${name}-external-${i}-egress`, args, { parent });
             }
         }
-
-        this.registerOutputs();
     }
 
     /** @internal */
@@ -303,9 +299,9 @@ export class ApplicationListener extends mod.Listener {
     }
 }
 
-utils.Capture(ApplicationListener.prototype).initializeListener.doNotCapture = true;
+utils.Capture(ApplicationListener).initializeListener.doNotCapture = true;
 
-async function getDefaultActions(
+function getDefaultActions(
         name: string, loadBalancer: ApplicationLoadBalancer,
         args: ApplicationListenerArgs,
         port: pulumi.Input<number>,
@@ -324,7 +320,7 @@ async function getDefaultActions(
 
     // User didn't provide default actions for this listener.  Create a reasonable target group for
     // us and use that as our default action.
-    const targetGroup = await createTargetGroup();
+    const targetGroup = createTargetGroup();
 
     return { defaultActions: [targetGroup.listenerDefaultAction()], defaultListener: targetGroup };
 
@@ -335,13 +331,13 @@ async function getDefaultActions(
             return args.targetGroup;
         }
         else if (args.targetGroup) {
-            return ApplicationTargetGroup.create(name, {
+            return new ApplicationTargetGroup(name, {
                 ...args.targetGroup,
                 loadBalancer,
             }, opts);
         }
         else {
-            return ApplicationTargetGroup.create(name, {
+            return new ApplicationTargetGroup(name, {
                 port,
                 protocol,
                 loadBalancer,
