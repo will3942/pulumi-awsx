@@ -38,8 +38,20 @@ export class ApplicationLoadBalancer extends mod.LoadBalancer {
     public readonly targetGroups: ApplicationTargetGroup[];
 
     constructor(name: string, args: ApplicationLoadBalancerArgs = {}, opts: pulumi.ComponentResourceOptions = {}) {
+        const baseArgs = ApplicationLoadBalancer.initializeLoadBalancer(name, args, opts);
+
+        super("aws:lb:ApplicationLoadBalancer", name, baseArgs,
+            pulumi.mergeOptions(opts, { aliases: [{ type: "awsx:x:elasticloadbalancingv2:ApplicationLoadBalancer"}] }));
+
+        this.listeners = [];
+        this.targetGroups = [];
+
+        this.registerOutputs();
+    }
+
+    private static async initializeLoadBalancer(name: string, args: ApplicationLoadBalancerArgs, opts: pulumi.ComponentResourceOptions) {
         const argsCopy: x.lb.LoadBalancerArgs = {
-            vpc: args.vpc || x.ec2.Vpc.getDefault(opts),
+            vpc: args.vpc || await x.ec2.Vpc.getDefault(opts),
             ...args,
             loadBalancerType: "application",
         };
@@ -51,13 +63,7 @@ export class ApplicationLoadBalancer extends mod.LoadBalancer {
             }, opts)];
         }
 
-        super("aws:lb:ApplicationLoadBalancer", name, argsCopy,
-            pulumi.mergeOptions(opts, { aliases: [{ type: "awsx:x:elasticloadbalancingv2:ApplicationLoadBalancer"}] }));
-
-        this.listeners = [];
-        this.targetGroups = [];
-
-        this.registerOutputs();
+        return argsCopy;
     }
 
     /**

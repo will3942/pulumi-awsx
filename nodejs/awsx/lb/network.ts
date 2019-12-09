@@ -28,14 +28,14 @@ export class NetworkLoadBalancer extends mod.LoadBalancer {
     public readonly listeners: NetworkListener[];
     public readonly targetGroups: NetworkTargetGroup[];
 
-    constructor(name: string, args: NetworkLoadBalancerArgs = {}, opts?: pulumi.ComponentResourceOptions) {
+    constructor(name: string, args: NetworkLoadBalancerArgs = {}, opts: pulumi.ComponentResourceOptions = {}) {
         const argsCopy: x.lb.LoadBalancerArgs = {
             ...args,
             loadBalancerType: "network",
         };
 
-        opts = pulumi.mergeOptions(opts, { aliases: [{ type: "awsx:x:elasticloadbalancingv2:NetworkLoadBalancer" }] });
-        super("awsx:lb:NetworkLoadBalancer", name, argsCopy, opts);
+        super("awsx:lb:NetworkLoadBalancer", name, Promise.resolve(argsCopy),
+            pulumi.mergeOptions(opts, { aliases: [{ type: "awsx:x:elasticloadbalancingv2:NetworkLoadBalancer" }] }));
 
         this.listeners = [];
         this.targetGroups = [];
@@ -175,7 +175,7 @@ export class NetworkListener
     public target(name: string, parent: pulumi.Resource): pulumi.Input<x.apigateway.IntegrationTarget> {
         // create a VpcLink to the load balancer in the VPC
         const vpcLink = new aws.apigateway.VpcLink(name, {
-            targetArn: this.loadBalancer.loadBalancer.arn,
+            targetArn: pulumi.output(this.loadBalancer.loadBalancer).apply(lb => lb.arn),
         }, { parent });
 
         return this.endpoint.apply(ep => ({

@@ -58,15 +58,15 @@ export abstract class Listener
         const defaultSslPolicy = pulumi.output(args.certificateArn)
                                        .apply(a => a ? "ELBSecurityPolicy-2016-08" : undefined!);
 
+        const loadBalancer = args.loadBalancer.loadBalancer;
         this.listener = new aws.lb.Listener(name, {
             ...args,
-            loadBalancerArn: args.loadBalancer.loadBalancer.arn,
+            loadBalancerArn: pulumi.output(loadBalancer).apply(lb => lb.arn),
             sslPolicy: utils.ifUndefined(args.sslPolicy, defaultSslPolicy),
         }, { parent: this });
 
-        const loadBalancer = args.loadBalancer.loadBalancer;
         this.endpoint = this.listener.urn.apply(_ => pulumi.output({
-            hostname: loadBalancer.dnsName,
+            hostname: pulumi.output(loadBalancer).apply(lb => lb.dnsName),
             port: args.port,
         }));
 

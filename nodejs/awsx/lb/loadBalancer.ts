@@ -20,18 +20,26 @@ import * as x from "..";
 import * as utils from "./../utils";
 
 export abstract class LoadBalancer extends pulumi.ComponentResource {
-    public readonly loadBalancer: aws.lb.LoadBalancer;
-    public readonly vpc: x.ec2.Vpc;
-    public readonly securityGroups: x.ec2.SecurityGroup[];
+    public readonly loadBalancer: Promise<aws.lb.LoadBalancer>;
+    public readonly vpc: Promise<x.ec2.Vpc>;
+    public readonly securityGroups: Promise<x.ec2.SecurityGroup[]>;
 
     public readonly listeners: mod.Listener[] = [];
     public readonly targetGroups: mod.TargetGroup[] = [];
 
-    constructor(type: string, name: string, args: LoadBalancerArgs, opts?: pulumi.ComponentResourceOptions) {
+    constructor(type: string, name: string, args: Promise<LoadBalancerArgs>, opts: pulumi.ComponentResourceOptions) {
         super(type, name, {}, opts);
 
-        this.vpc = args.vpc || x.ec2.Vpc.getDefault({ parent: this });
-        this.securityGroups = x.ec2.getSecurityGroups(this.vpc, name, args.securityGroups, { parent: this }) || [];
+        const data = LoadBalancer.initialize(this, args);
+        this.loadBalancer = data.then(d => d.loadBalancer);
+        this.vpc = data.then(d => d.vpc);
+        this.securityGroups = data.then(d => d.securityGroups);
+    }
+
+    private static async initialize(parent: pulumi.Resource, argsPromise: Promise<LoadBalancerArgs>) {
+        const args = await argsPromise;
+        const vpc = args.vpc || await x.ec2.Vpc.getDefault({ parent });
+        const securityGroups = x.ec2.getSecurityGroups(vpc, name, args.securityGroups, { parent }) || [];
 
         const external = utils.ifUndefined(args.external, true);
 
@@ -39,16 +47,22 @@ export abstract class LoadBalancer extends pulumi.ComponentResource {
         // people didn't have direct control over creating the LB.  In awsx though creating the LB
         // is easy to do, so we just let the user pass in the name they want.  We simply add an
         // alias from the old name to the new one to keep things from being recreated.
-        this.loadBalancer = new aws.lb.LoadBalancer(name, {
+        const loadBalancer = new aws.lb.LoadBalancer(name, {
             ...args,
-            subnets: getSubnets(args, this.vpc, external),
+            subnets: getSubnets(args, vpc, external),
             internal: external.apply(ex => !ex),
-            securityGroups: this.securityGroups.map(g => g.id),
+            securityGroups: securityGroups.map(g => g.id),
             tags: utils.mergeTags(args.tags, { Name: name }),
         }, {
-            parent: this,
+            parent,
             aliases: [{ name: args.name || utils.sha1hash(name) }],
         });
+
+        return {
+            vpc,
+            loadBalancer,
+            securityGroups,
+        };
     }
 
     /**
