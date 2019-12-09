@@ -225,7 +225,7 @@ export class StepScalingPolicy extends pulumi.ComponentResource {
     }
 
     /** @internal */
-    public static async initialize(_this: StepScalingPolicy, name: string, group: AutoScalingGroup, args: StepScalingPolicyArgs) {
+    public static async initialize(parent: pulumi.Resource, name: string, group: AutoScalingGroup, args: StepScalingPolicyArgs) {
         if (!args.steps.upper && !args.steps.lower) {
             throw new Error("At least one of [args.steps.upper] and [args.steps.lower] must be provided.");
         }
@@ -261,7 +261,7 @@ export class StepScalingPolicy extends pulumi.ComponentResource {
             upperPolicy = new aws.autoscaling.Policy(`${name}-upper`, {
                 ...commonArgs,
                 stepAdjustments: convertedSteps.upper.stepAdjustments,
-            }, { parent: _this });
+            }, { parent });
 
             upperAlarm = metric.createAlarm(`${name}-upper`, {
                 evaluationPeriods,
@@ -269,14 +269,14 @@ export class StepScalingPolicy extends pulumi.ComponentResource {
                 comparisonOperator: "GreaterThanOrEqualToThreshold",
                 threshold: convertedSteps.upper.threshold,
                 alarmActions: [upperPolicy.arn],
-            }, { parent: _this });
+            }, { parent });
         }
 
         if (args.steps.lower) {
             lowerPolicy = new aws.autoscaling.Policy(`${name}-lower`, {
                 ...commonArgs,
                 stepAdjustments: convertedSteps.lower.stepAdjustments,
-            }, { parent: _this });
+            }, { parent });
 
             lowerAlarm = metric.createAlarm(`${name}-lower`, {
                 evaluationPeriods,
@@ -284,7 +284,7 @@ export class StepScalingPolicy extends pulumi.ComponentResource {
                 comparisonOperator: "LessThanOrEqualToThreshold",
                 threshold: convertedSteps.lower.threshold,
                 alarmActions: [lowerPolicy.arn],
-            }, { parent: _this });
+            }, { parent });
         }
 
         return {

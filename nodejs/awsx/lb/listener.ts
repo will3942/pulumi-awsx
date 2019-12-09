@@ -31,18 +31,18 @@ export abstract class Listener
         implements x.ecs.ContainerPortMappingProvider,
                    x.ecs.ContainerLoadBalancerProvider {
     public readonly loadBalancer: x.lb.LoadBalancer;
-    public readonly listener!: aws.lb.Listener;
-    public readonly defaultTargetGroup?: x.lb.TargetGroup;
+    public readonly listener: aws.lb.Listener;
+    public readonly defaultTargetGroup: x.lb.TargetGroup;
 
-    public readonly endpoint!: pulumi.Output<ListenerEndpoint>;
+    public readonly endpoint: pulumi.Output<ListenerEndpoint>;
 
     /** @internal */
-    public readonly defaultListenerAction?: ListenerDefaultAction;
+    public readonly defaultListenerAction: ListenerDefaultAction;
 
     // tslint:disable-next-line:variable-name
     private readonly __isListenerInstance = true;
 
-    constructor(version: number, type: string, name: string,
+    constructor(type: string, name: string,
                 loadBalancer: mod.LoadBalancer,
                 opts: pulumi.ComponentResourceOptions) {
 
@@ -54,17 +54,13 @@ export abstract class Listener
             ...pulumi.mergeOptions(opts, { aliases: [{ parent: opts.parent }] }),
         });
 
-        if (typeof version !== "number") {
-            throw new pulumi.ResourceError("Do not construct a TargetGroup directly. Use [ApplicationTargetGroup.create] or [NetworkTargetGroup.create] instead.", this);
-        }
-
         this.loadBalancer = loadBalancer;
     }
 
     /** @internal */
-    public async initialize(name: string,
-                            defaultListenerAction: ListenerDefaultAction | undefined,
-                            args: ListenerArgs) {
+    public static async initialize(parent: pulumi.Resource, name: string,
+                                   defaultListenerAction: ListenerDefaultAction | undefined,
+                                   args: ListenerArgs) {
         const _this = utils.Mutable(this);
 
         // If SSL is used, and no ssl policy was  we automatically insert the recommended ELB

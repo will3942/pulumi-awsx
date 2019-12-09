@@ -46,11 +46,11 @@ export class Repository extends pulumi.ComponentResource {
     }
 
     /** @internal */
-    public static async initialize(_this: Repository, name: string, args: RepositoryArgs) {
+    public static async initialize(parent: pulumi.Resource, name: string, args: RepositoryArgs) {
         const lowerCaseName = name.toLowerCase();
 
-        const repository = args.repository || new aws.ecr.Repository(lowerCaseName, args, { parent: _this });
-        const lifecyclePolicy = new LifecyclePolicy(lowerCaseName, repository, args.lifeCyclePolicyArgs, { parent: _this });
+        const repository = args.repository || new aws.ecr.Repository(lowerCaseName, args, { parent });
+        const lifecyclePolicy = new LifecyclePolicy(lowerCaseName, repository, args.lifeCyclePolicyArgs, { parent });
 
         return {
             repository,
