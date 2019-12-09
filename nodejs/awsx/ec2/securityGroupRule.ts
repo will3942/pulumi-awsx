@@ -106,7 +106,7 @@ export class AllTraffic implements SecurityGroupRulePorts {
 }
 
 export abstract class SecurityGroupRule extends pulumi.ComponentResource {
-    public readonly securityGroupRule: Promise<aws.ec2.SecurityGroupRule>;
+    public readonly securityGroupRule: aws.ec2.SecurityGroupRule;
     public readonly securityGroup: x.ec2.SecurityGroup;
 
     /** @internal */
@@ -120,11 +120,11 @@ export abstract class SecurityGroupRule extends pulumi.ComponentResource {
         this.securityGroup = securityGroup;
 
         const data = SecurityGroupRule.initialize(this, name, securityGroup, args);
-        this.securityGroupRule = data.then(d => d.securityGroupRule);
+        this.securityGroupRule = data.securityGroupRule;
     }
 
     /** @internal */
-    public static async initialize(parent: pulumi.Resource, name: string, securityGroup: x.ec2.SecurityGroup, args: SecurityGroupRuleArgs) {
+    public static initialize(parent: pulumi.Resource, name: string, securityGroup: x.ec2.SecurityGroup, args: SecurityGroupRuleArgs) {
         const securityGroupRule = new aws.ec2.SecurityGroupRule(name, {
             ...args,
             securityGroupId: securityGroup.id,

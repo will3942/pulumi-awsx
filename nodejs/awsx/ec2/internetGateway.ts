@@ -22,7 +22,7 @@ export class InternetGateway
         extends pulumi.ComponentResource
         implements x.ec2.SubnetRouteProvider {
     public readonly vpc: x.ec2.Vpc;
-    public readonly internetGateway: Promise<aws.ec2.InternetGateway>;
+    public readonly internetGateway: aws.ec2.InternetGateway;
 
     /** @internal */
     constructor(name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs, opts?: pulumi.ComponentResourceOptions)
@@ -33,13 +33,13 @@ export class InternetGateway
         this.vpc = vpc;
 
         const data = InternetGateway.initialize(this, name, vpc, args);
-        this.internetGateway = data.then(d => d.internetGateway);
+        this.internetGateway = data.internetGateway;
 
         this.registerOutputs();
     }
 
     /** @internal */
-    public static async initialize(parent: pulumi.Resource, name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs | ExistingInternetGatewayArgs) {
+    public static initialize(parent: pulumi.Resource, name: string, vpc: x.ec2.Vpc, args: aws.ec2.InternetGatewayArgs | ExistingInternetGatewayArgs) {
         let internetGateway: aws.ec2.InternetGateway;
         if (isExistingInternetGatewayArgs(args)) {
             internetGateway = args.internetGateway;
@@ -61,7 +61,7 @@ export class InternetGateway
             // From above: For IPv4 traffic, specify 0.0.0.0/0 in the Destination box, and
             // select the internet gateway ID in the Target list.
             destinationCidrBlock: "0.0.0.0/0",
-            gatewayId: pulumi.output(this.internetGateway).apply(ig => ig.id),
+            gatewayId: this.internetGateway.id,
         };
     }
 }

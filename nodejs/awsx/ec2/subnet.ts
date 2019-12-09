@@ -30,9 +30,9 @@ export class Subnet extends pulumi.ComponentResource {
      * Output will only resolve once the route table and all associations are resolved.
      */
     public readonly id: pulumi.Output<string>;
-    public readonly subnet: Promise<aws.ec2.Subnet>;
-    public readonly routeTable: Promise<aws.ec2.RouteTable | undefined>;
-    public readonly routeTableAssociation: Promise<aws.ec2.RouteTableAssociation | undefined>;
+    public readonly subnet: aws.ec2.Subnet;
+    public readonly routeTable: aws.ec2.RouteTable | undefined;
+    public readonly routeTableAssociation: aws.ec2.RouteTableAssociation | undefined;
 
     public readonly routes: aws.ec2.Route[] = [];
 
@@ -46,16 +46,16 @@ export class Subnet extends pulumi.ComponentResource {
         this.subnetName = name;
 
         const data = Subnet.initialize(this, name, vpc, args, opts);
-        this.id = pulumi.output(data).id;
-        this.subnet = data.then(d => d.subnet);
-        this.routeTable = data.then(d => d.routeTable);
-        this.routeTableAssociation = data.then(d => d.routeTableAssociation);
+        this.id = data.id;
+        this.subnet = data.subnet;
+        this.routeTable = data.routeTable;
+        this.routeTableAssociation = data.routeTableAssociation;
 
         this.registerOutputs();
     }
 
     /** @internal */
-    public static async initialize(parent: pulumi.Resource, name: string, vpc: x.ec2.Vpc, args: SubnetArgs | ExistingSubnetArgs, opts: pulumi.ComponentResourceOptions) {
+    public static initialize(parent: pulumi.Resource, name: string, vpc: x.ec2.Vpc, args: SubnetArgs | ExistingSubnetArgs, opts: pulumi.ComponentResourceOptions) {
         let subnet: aws.ec2.Subnet;
         let id: pulumi.Output<string>;
         let routeTable: aws.ec2.RouteTable | undefined;

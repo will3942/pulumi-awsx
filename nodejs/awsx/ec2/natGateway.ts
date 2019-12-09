@@ -25,8 +25,8 @@ export class NatGateway
     public readonly vpc: x.ec2.Vpc;
     public readonly natGatewayName: string;
 
-    public readonly elasticIP: Promise<aws.ec2.Eip | undefined>;
-    public readonly natGateway: Promise<aws.ec2.NatGateway>;
+    public readonly elasticIP: aws.ec2.Eip | undefined;
+    public readonly natGateway: aws.ec2.NatGateway;
 
     /** @internal */
     constructor(name: string, vpc: x.ec2.Vpc, args: NatGatewayArgs, opts?: pulumi.ComponentResourceOptions)
@@ -38,14 +38,14 @@ export class NatGateway
         this.natGatewayName = name;
 
         const data = NatGateway.initialize(this, name, args);
-        this.elasticIP = data.then(d => d.elasticIP);
-        this.natGateway = data.then(d => d.natGateway);
+        this.elasticIP = data.elasticIP;
+        this.natGateway = data.natGateway;
 
         this.registerOutputs();
     }
 
     /** @internal */
-    public static async initialize(parent: pulumi.Resource, name: string, args: NatGatewayArgs | ExistingNatGatewayArgs, opts: pulumi.ComponentResourceOptions = {}) {
+    public static initialize(parent: pulumi.Resource, name: string, args: NatGatewayArgs | ExistingNatGatewayArgs, opts: pulumi.ComponentResourceOptions = {}) {
         let natGateway: aws.ec2.NatGateway;
         let elasticIP: aws.ec2.Eip | undefined;
         if (isExistingNatGatewayArgs(args)) {
@@ -88,7 +88,7 @@ export class NatGateway
             // Choose Add another route. For Destination, type 0.0.0.0/0. For Target, select the ID
             // of your NAT gateway.
             destinationCidrBlock: "0.0.0.0/0",
-            natGatewayId: pulumi.output(this.natGateway).apply(g => g.id),
+            natGatewayId: this.natGateway.id,
         };
     }
 }

@@ -88,7 +88,7 @@ export abstract class TaskDefinition extends pulumi.ComponentResource {
 
         const containerDefinitions = await computeContainerDefinitions(
             parent, name, args.vpc, containers, applicationListeners, networkListeners, logGroup);
-        const listeners = {...applicationListeners, ...networkListeners };
+        const listeners: Record<string, x.lb.Listener> = {...applicationListeners, ...networkListeners };
 
         const containerString = containerDefinitions.apply(d => JSON.stringify(d));
         const defaultFamily = containerString.apply(s => name + "-" + utils.sha1hash(pulumi.getStack() + containerString));

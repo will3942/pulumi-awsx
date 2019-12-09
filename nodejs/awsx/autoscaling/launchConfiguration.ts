@@ -27,9 +27,9 @@ export class AutoScalingLaunchConfiguration extends pulumi.ComponentResource {
      */
     public readonly stackName: pulumi.Output<string>;
 
-    public readonly instanceProfile: Promise<aws.iam.InstanceProfile>;
-    public readonly launchConfiguration: Promise<aws.ec2.LaunchConfiguration>;
-    public readonly securityGroups: Promise<x.ec2.SecurityGroup[]>;
+    public readonly instanceProfile: aws.iam.InstanceProfile;
+    public readonly launchConfiguration: aws.ec2.LaunchConfiguration;
+    public readonly securityGroups: x.ec2.SecurityGroup[];
 
     /** @internal */
     constructor(name: string,  vpc: x.ec2.Vpc,
@@ -43,15 +43,15 @@ export class AutoScalingLaunchConfiguration extends pulumi.ComponentResource {
         this.id = dataOutput.id;
         this.stackName = dataOutput.stackName;
 
-        this.instanceProfile = data.then(d => d.instanceProfile);
-        this.securityGroups = data.then(d => d.securityGroups);
-        this.launchConfiguration = data.then(d => d.launchConfiguration);
+        this.instanceProfile = data.instanceProfile;
+        this.securityGroups = data.securityGroups;
+        this.launchConfiguration = data.launchConfiguration;
 
         this.registerOutputs();
     }
 
     /** @internal */
-    public static async initialize(
+    public static initialize(
             parent: pulumi.Resource, name: string,
             vpc: x.ec2.Vpc, args: AutoScalingLaunchConfigurationArgs) {
 

@@ -31,22 +31,22 @@ import { RepositoryImage } from "./repositoryImage";
  * destination registry.
  */
 export class Repository extends pulumi.ComponentResource {
-    public readonly repository: Promise<aws.ecr.Repository>;
-    public readonly lifecyclePolicy: Promise<aws.ecr.LifecyclePolicy>;
+    public readonly repository: aws.ecr.Repository;
+    public readonly lifecyclePolicy: aws.ecr.LifecyclePolicy;
 
     /** @internal */
     constructor(name: string, args: RepositoryArgs = {}, opts: pulumi.ComponentResourceOptions = {}) {
         super("awsx:ecr:Repository", name, {}, opts);
 
         const data = Repository.initialize(this, name, args);
-        this.repository = data.then(d => d.repository);
-        this.lifecyclePolicy = data.then(d => d.lifecyclePolicy);
+        this.repository = data.repository;
+        this.lifecyclePolicy = data.lifecyclePolicy;
 
         this.registerOutputs();
     }
 
     /** @internal */
-    public static async initialize(parent: pulumi.Resource, name: string, args: RepositoryArgs) {
+    public static initialize(parent: pulumi.Resource, name: string, args: RepositoryArgs) {
         const lowerCaseName = name.toLowerCase();
 
         const repository = args.repository || new aws.ecr.Repository(lowerCaseName, args, { parent });
@@ -64,7 +64,7 @@ export class Repository extends pulumi.ComponentResource {
      * can be passed as the value to `image: repo.buildAndPushImage(...)` in an `ecs.Container`.
      */
     public buildAndPushImage(pathOrBuild: pulumi.Input<string | docker.DockerBuild>) {
-        return pulumi.all([pathOrBuild, this.repository.then(r => r.repositoryUrl), this.repository.then(r => r.registryId)])
+        return pulumi.all([pathOrBuild, this.repository.repositoryUrl, this.repository.registryId])
                      .apply(([pathOrBuild, repositoryUrl, registryId]) =>
                         computeImageFromAsset(pathOrBuild, repositoryUrl, registryId, this));
     }

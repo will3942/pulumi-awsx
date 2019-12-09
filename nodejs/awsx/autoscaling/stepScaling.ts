@@ -191,24 +191,24 @@ export class StepScalingPolicy extends pulumi.ComponentResource {
     /**
      * Underlying [Policy] created to define the scaling strategy for the upper set of steps.
      */
-    public readonly upperPolicy: Promise<aws.autoscaling.Policy | undefined>;
+    public readonly upperPolicy: aws.autoscaling.Policy | undefined;
 
     /**
      * Alarm that invokes [upperPolicy] when the metric goes above the lowest value of the upper
      * range of steps.
      */
-    public readonly upperAlarm: Promise<aws.cloudwatch.MetricAlarm | undefined>;
+    public readonly upperAlarm: aws.cloudwatch.MetricAlarm | undefined;
 
     /**
      * Underlying [Policy] created to define the scaling strategy for the lower set of steps.
      */
-    public readonly lowerPolicy: Promise<aws.autoscaling.Policy | undefined>;
+    public readonly lowerPolicy: aws.autoscaling.Policy | undefined;
 
     /**
      * Alarm that invokes [lowerPolicy] when the metric goes below the highest value of the lower
      * range of steps.
      */
-    public readonly lowerAlarm: Promise<aws.cloudwatch.MetricAlarm | undefined>;
+    public readonly lowerAlarm: aws.cloudwatch.MetricAlarm | undefined;
 
     /** @internal */
     constructor(name: string, group: AutoScalingGroup,
@@ -216,16 +216,16 @@ export class StepScalingPolicy extends pulumi.ComponentResource {
         super("awsx:autoscaling:StepScalingPolicy", name, {}, { parent: group, ...opts });
 
         const data = StepScalingPolicy.initialize(this, name, group, args);
-        this.upperPolicy = data.then(d => d.upperPolicy);
-        this.lowerPolicy = data.then(d => d.lowerPolicy);
-        this.upperAlarm = data.then(d => d.upperAlarm);
-        this.lowerAlarm = data.then(d => d.lowerAlarm);
+        this.upperPolicy = data.upperPolicy;
+        this.lowerPolicy = data.lowerPolicy;
+        this.upperAlarm = data.upperAlarm;
+        this.lowerAlarm = data.lowerAlarm;
 
         this.registerOutputs();
     }
 
     /** @internal */
-    public static async initialize(parent: pulumi.Resource, name: string, group: AutoScalingGroup, args: StepScalingPolicyArgs) {
+    public static initialize(parent: pulumi.Resource, name: string, group: AutoScalingGroup, args: StepScalingPolicyArgs) {
         if (!args.steps.upper && !args.steps.lower) {
             throw new Error("At least one of [args.steps.upper] and [args.steps.lower] must be provided.");
         }

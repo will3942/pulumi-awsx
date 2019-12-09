@@ -61,30 +61,27 @@ export abstract class Listener
     public static async initialize(parent: pulumi.Resource, name: string,
                                    defaultListenerAction: ListenerDefaultAction | undefined,
                                    args: ListenerArgs) {
-        const _this = utils.Mutable(this);
-
         // If SSL is used, and no ssl policy was  we automatically insert the recommended ELB
         // security policy from:
         // http://docs.aws.amazon.com/elasticloadbalancing/latest/application/create-https-listener.html.
         const defaultSslPolicy = pulumi.output(args.certificateArn)
                                        .apply(a => a ? "ELBSecurityPolicy-2016-08" : undefined!);
 
-        _this.listener = new aws.lb.Listener(name, {
+        const listener = new aws.lb.Listener(name, {
             ...args,
             loadBalancerArn: args.loadBalancer.loadBalancer.arn,
             sslPolicy: utils.ifUndefined(args.sslPolicy, defaultSslPolicy),
-        }, { parent: this });
+        }, { parent });
 
         const loadBalancer = args.loadBalancer.loadBalancer;
-        _this.endpoint = this.listener.urn.apply(_ => pulumi.output({
+        const endpoint = listener.urn.apply(_ => pulumi.output({
             hostname: loadBalancer.dnsName,
             port: args.port,
         }));
 
-        _this.defaultListenerAction = defaultListenerAction;
-
+        let defaultTargetGroup: mod.TargetGroup | undefined;
         if (defaultListenerAction instanceof mod.TargetGroup) {
-            _this.defaultTargetGroup = defaultListenerAction;
+            defaultTargetGroup = defaultListenerAction;
         }
 
         if (defaultListenerAction) {
